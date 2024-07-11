@@ -56,15 +56,10 @@ void InmotionV2Message::parse(byte* pData, size_t length) {
     if ((pData[4] & 0x7F) == (byte)0x04) {
       EUC& pEUC = EUC::getInstance();
       pEUC.setMVoltage(((pData[6] & 0xFF) << 8) | (pData[5] & 0xFF));
-      pEUC.setChargeState(((pData[6] & 0xFF) << 8) | (pData[5] & 0xFF));
+      pEUC.setSpeed(((pData[10] & 0xFF) << 8) | (pData[9] & 0xFF));
+      pEUC.setChargeState((pData[61] >> 7) & 0x01);
+
       pEUC.debug();
-      // Serial.printf("[DEBUG] mVoltage = %d\n", ((pData[6] & 0xFF) << 8) |
-      // (pData[5] & 0xFF)); Serial.printf("[DEBUG] chargeState = %d\n",
-      // (pData[61] >> 7) & 0x01); Serial.printf("[DEBUG] lowLightState = %d\n",
-      // (pData[62]) & 0x01); Serial.printf("[DEBUG] highLightState = %d\n",
-      // (pData[62] >> 1) & 0x01); Serial.printf("[DEBUG] liftedState = %d\n",
-      // (pData[62] >> 2) & 0x01); Serial.printf("[DEBUG] tailLiState = %d\n",
-      // (pData[62] >> 3) & 0x03);
     }
   } else {
     Serial.printf("[DEBUG] Unknown 0x%02hX\n", pData[2]);

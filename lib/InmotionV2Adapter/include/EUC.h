@@ -8,6 +8,8 @@ class EUC {
   void debug();
   void setMVoltage(int val);
   void setChargeState(int val);
+  void setSpeed(int val);
+  int getSpeed();
 
  private:
   EUC();
@@ -17,6 +19,7 @@ class EUC {
 
   int mVoltage;
   bool chargeState;
+  int speed;
 };
 
 #endif
