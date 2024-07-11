@@ -1,93 +1,90 @@
 #include <Arduino.h>
+#include <EUC.h>
+#include <InmotionV2Message.h>
 #include <NimBLEDevice.h>
 
 // Пины
-const int buttonPin = 0;
 const int ledPin = 2;
+
+#define MY_PERIOD 1000  // период в мс
+uint32_t tmr1;          // переменная таймера
 
 // Список сервисов и характеристик
 static NimBLEUUID serviceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
 static NimBLEUUID txCharUUID("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
 static NimBLEUUID rxCharUUID("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
 
-static NimBLEClient *pClient;
-static NimBLEAdvertisedDevice *myDevice;
-static NimBLERemoteCharacteristic *rxCharacteristic;
-static NimBLERemoteCharacteristic *txCharacteristic;
+static NimBLEClient* bleClient;
+static NimBLEAdvertisedDevice* selectedDevice;
+static NimBLERemoteCharacteristic* rxCharacteristic;
+static NimBLERemoteCharacteristic* txCharacteristic;
+
+static InmotionV2Message* pMessage;
 
 static boolean doScan = false;
-static boolean doConnecting = false;
-static boolean initialized = false;
-
-static void notifyCallback(NimBLERemoteCharacteristic *pBLERemoteCharacteristic, byte *pData, size_t length, bool isNotify)
-{
-  Serial.print("[DEBUG] Notify received: "); Serial.println(pData[3], HEX);
-
-  // Гасим светодиод, коллбек обработан
-  digitalWrite(ledPin, LOW);
-}
+static boolean doConnect = false;
+static boolean doInit = false;
+static boolean doWork = false;
 
 /** @brief Коллбеки для управления подключением к EUC */
-class EucDeviceCallbacks : public NimBLEClientCallbacks
-{
-  void onConnect(NimBLEClient *pClient)
-  {
-    Serial.println("[DEBUG] Connected to EUC, initializing services...");
+class EucDeviceCallbacks : public NimBLEClientCallbacks {
+  void onConnect(NimBLEClient* bleClient) {
+    Serial.println("[BLE] Connected!");
 
-    NimBLERemoteService *pRemoteService = pClient->getService(serviceUUID);
-
-    txCharacteristic = pRemoteService->getCharacteristic(txCharUUID);
-
-    rxCharacteristic = pRemoteService->getCharacteristic(rxCharUUID);
-    rxCharacteristic->subscribe(true, notifyCallback);
-
-    initialized = true;
-    Serial.println("[DEBUG]  EUC initialized!");
+    doScan = false;
+    doConnect = false;
+    doInit = true;
+    doWork = false;
   }
 
-  void onDisconnect(NimBLEClient *pClient)
-  {
-    Serial.println("[INFO] Disconnected from EUC");
-    initialized = false;
-    doConnecting = false;
+  void onDisconnect(NimBLEClient* bleClient) {
+    Serial.println("[BLE] Disconnected from EUC");
     doScan = true;
+    doConnect = false;
+    doInit = true;
+    doWork = false;
   }
 };
 
-/** @brief A callback handler for callbacks associated device scanning. */
-class EUCFoundDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
-{
-  /** @brief Called when a new scan result is detected. */
-  void onResult(NimBLEAdvertisedDevice *advertisedDevice)
-  {
+class EUCFoundDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
+  /** @brief Запускается при нахождении любого устройства */
+  void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
     // Пропускаем устройства с пустым именем
-    if (advertisedDevice->getName() == "")
+    if (advertisedDevice->getName() == "") {
       return;
+    }
 
-    Serial.print("[DEBUG] Device found: ");
-    Serial.println(advertisedDevice->getName().c_str());
+    Serial.printf("[BLE] 🔵 %s\n", advertisedDevice->toString().c_str());
 
     // Пропускаем устройства, которые не поддерживают нужные сервисы
-    if (!advertisedDevice->isAdvertisingService(serviceUUID))
+    if (!advertisedDevice->isAdvertisingService(serviceUUID)) {
       return;
+    }
 
-    // Нашли устройство, останавливаем сканирование
-    doScan = false;
+    // Мы нашли подходящее устройство, останавливаем сканирование
     NimBLEDevice::getScan()->stop();
 
+    selectedDevice = advertisedDevice;
+    doScan = false;
+    doConnect = true;
+    doInit = false;
+    doWork = false;
+
     // Выводим название устройства
-    myDevice = advertisedDevice;
-    doConnecting = true;
-    Serial.println("[INFO] Device selected, waiting for connect!");
+    Serial.printf("[BLE] Device %s selected\n",
+                  advertisedDevice->getName().c_str());
   }
 };
 
-void startBLEScan()
-{
-  // Сбрасываем переменные
-  initialized = false;
+/** @brief Запуск сканирования */
+void startBLEScan() {
+  Serial.println("[BLE] Scanning...");
+  doScan = false;
+  doConnect = false;
+  doInit = false;
+  doWork = false;
 
-  NimBLEScan *pScan = NimBLEDevice::getScan();
+  NimBLEScan* pScan = NimBLEDevice::getScan();
   pScan->setAdvertisedDeviceCallbacks(new EUCFoundDeviceCallbacks());
   pScan->setInterval(100);
   pScan->setWindow(99);
@@ -95,56 +92,85 @@ void startBLEScan()
   pScan->start(15);
 }
 
+void connectToBleDevice() {
+  Serial.println("[BLE] Connecting...");
+  bleClient->connect(selectedDevice, true);
+
+  doScan = false;
+  doConnect = false;
+  doInit = true;
+  doWork = false;
+}
+
+/** @brief Коллбек при получении сообщения в характеристику RX */
+static void rxReceivedCallback(
+    NimBLERemoteCharacteristic* pBLERemoteCharacteristic,
+    byte* pData,
+    size_t length,
+    bool isNotify) {
+  pMessage->parse(pData, length);
+  // После получения и парсинга сообщения гасим светодиод
+  digitalWrite(ledPin, LOW);
+}
+
+void initBleDevice() {
+  Serial.println("[BLE] Initializing services...");
+  NimBLERemoteService* pRemoteService = bleClient->getService(serviceUUID);
+  txCharacteristic = pRemoteService->getCharacteristic(txCharUUID);
+  rxCharacteristic = pRemoteService->getCharacteristic(rxCharUUID);
+  rxCharacteristic->subscribe(true, rxReceivedCallback);
+  Serial.println("[BLE] Device services initialized successfully");
+
+  doScan = false;
+  doConnect = false;
+  doInit = false;
+  doWork = true;
+}
+
 //////////////////////////////////
 //////////////////////////////////
 //////////////////////////////////
 
-void setup()
-{
+void setup() {
   pinMode(ledPin, OUTPUT);
-  pinMode(buttonPin, INPUT);
 
   Serial.begin(115200);
   Serial.println();
   Serial.println("[INFO] Starting ESP32-EUC application...");
 
   NimBLEDevice::init("ESP32-EUC");
-  pClient = NimBLEDevice::createClient();
-  pClient->setClientCallbacks(new EucDeviceCallbacks());
+  bleClient = NimBLEDevice::createClient();
+  bleClient->setClientCallbacks(new EucDeviceCallbacks());
+
+  pMessage = new InmotionV2Message();
 
   // Запланировали сканирование
   doScan = true;
+
+  // Таймер для команд
+  unsigned long start = millis();
 }
 
-void loop()
-{
-  if (doScan == true)
+void loop() {
+  if (doScan == true) {
     startBLEScan();
-  else if (doConnecting == true)
-  {
-    doConnecting = false;
+  } else if (doConnect == true) {
+    connectToBleDevice();
+  } else if (doInit == true) {
+    initBleDevice();
+  } else if (doWork == true) {
+    if (millis() - tmr1 >= MY_PERIOD) {
+      tmr1 = millis();
 
-    Serial.println("[DEBUG] Connecting to selected device...");
-    pClient->connect(myDevice, true);
-    Serial.println("[DEBUG] Connected to selected device!");
-  }
-  else if (initialized == true)
-  {
-    digitalWrite(ledPin, HIGH);
+      // Перед отправкой сообщения включаем светодиод на плате
+      digitalWrite(ledPin, HIGH);
+      Serial.println("[EUC] Sending live packet...");
+      byte live[6] = {0xAA, 0xAA, 0x14, 0x01, 0x04, 0x11};
+      txCharacteristic->writeValue(live, sizeof(live), false);
+    }
 
-    byte live[6] = {0xAA, 0xAA, 0x14, 0x01, 0x04, 0x11};
-    // byte mute[8] = {0xAA, 0xAA, 0x14, 0x03, 0x60, 0x2C, 0x00, 0x5B};
-    // byte drlOn[8] = {0xAA, 0xAA, 0x14, 0x03, 0x60, 0x2D, 0x01, 0x5B};
-    // byte drlOff[8] = {0xAA, 0xAA, 0x14, 0x03, 0x60, 0x2D, 0x00, 0x5A};
-
-    txCharacteristic->writeValue(live, sizeof(live));
+  } else {
+    Serial.println("[DEBUG] Empty loop");
     delay(1000);
-
-    // txCharacteristic->writeValue(drlOn, sizeof(drlOn), false);
-    // delay(100);
-    // txCharacteristic->writeValue(drlOff, sizeof(drlOff), false);
-    // delay(100);
   }
-
-  // delay(1000);
 }
