@@ -191,7 +191,7 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           pEUC.brakeState = (pData[5 + 58]) & 0x01;
           pEUC.slowDownState = (pData[5 + 58] >> 2) & 0x01;
           pEUC.DFUState = (pData[5 + 58] >> 3) & 0x01;
-          pEUC.debug();
+          // pEUC.debug();
           break;
         }
         case (byte)0x05:

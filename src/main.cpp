@@ -159,11 +159,11 @@ void connectToBleDevice() {
 
 /** @brief Коллбек при получении ответа от колеса */
 static void rxReceivedCallback(NimBLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
-    // Serial.print("👉 ");
-    // for (size_t i = 0; i < length; i++) {
-    //   Serial.printf("0x%02hX ", pData[i]);
-    // }
-    // Serial.println();
+  // Serial.print("👉 ");
+  // for (size_t i = 0; i < length; i++) {
+  //   Serial.printf("0x%02hX ", pData[i]);
+  // }
+  // Serial.println();
   if (doProxy == true) {
     if (bleServer->getConnectedCount()) {
       NimBLEService* pSvc = bleServer->getServiceByUUID(serviceUUID);
@@ -173,7 +173,6 @@ static void rxReceivedCallback(NimBLERemoteCharacteristic* pBLERemoteCharacteris
           pChr->notify(pData, length, true);
 
           pMessage->parse(pData, length);
-
         }
       }
     }
@@ -316,7 +315,7 @@ void setup() {
   FastLED.addLeds<LED_TYPE, DATA_PIN, GRB>(leds, NUM_LEDS);
   FastLED.setDither(false);
   FastLED.setCorrection(TypicalLEDStrip);
-  FastLED.setBrightness(20);
+  // FastLED.setBrightness(20);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 100);
   currentPalette = RainbowColors_p;
   currentBlending = LINEARBLEND;
@@ -363,6 +362,15 @@ void setup() {
 }
 
 void loop() {
+  // ChangePalettePeriodically();
+  // static uint8_t startIndex = 0;
+  // startIndex = startIndex + 1; /* motion speed */
+
+  // FillLEDsFromPaletteColors(startIndex);
+
+  // FastLED.show();
+  // FastLED.delay(1000 / 100);
+
   if (doScan == true) {
     startBLEScan();
   } else if (doConnect == true) {
@@ -370,6 +378,17 @@ void loop() {
   } else if (doInit == true) {
     initBleDevice();
   } else if (doWork == true) {
+    int ledsRoll = map(euc.rollAngle, -9000, 9000, 0, 12);
+    Serial.println(ledsRoll);
+    for (int i = 0; i < NUM_LEDS; i++) {
+      if (i < ledsRoll) {
+        leds[i] = CRGB::PowderBlue;
+      } else {
+        leds[i] = CRGB::Black;
+      }
+    }
+    FastLED.show();
+
     // if (millis() - tmr1 >= MY_PERIOD) {
     //   tmr1 = millis();
 
@@ -435,20 +454,11 @@ void loop() {
     // }
 
     // Яркость фары в зависимости от скорости движения
-    // brightness = map(euc.getSpeed(), 0, 30, 5, 255);
+    // brightness = map(euc.speed, 0, 30, 5, 255);
     // brightness = 10;
-    // if (euc.getSpeed() > 0) {
+
+    // if (euc.speed > 0) {
     //   brightness = 30;
     // }
-
-    // ChangePalettePeriodically();
-    static uint8_t startIndex = 0;
-    startIndex = startIndex + 1; /* motion speed */
-
-    FillLEDsFromPaletteColors(startIndex);
-
-    FastLED.show();
-    FastLED.delay(1000 / 100);
-    FastLED.show();
   }
 }
