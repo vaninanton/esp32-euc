@@ -2,6 +2,7 @@
 #define InmotionV2Message_h
 
 #include <Arduino.h>
+#include <EUC.h>
 
 class InmotionUnpackerV2 {
  public:
@@ -20,7 +21,7 @@ class InmotionUnpackerV2 {
 
  private:
   uint8_t buffer[255];
-  size_t bufferIndex;
+  size_t bufferIndex = 0;
 
   uint8_t oldc = 0;
   size_t len = 0;

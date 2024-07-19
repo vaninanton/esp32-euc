@@ -1,12 +1,12 @@
-#ifndef SAMPLE_MANAGER_H
-#define SAMPLE_MANAGER_H
+#pragma once
 #include <Arduino.h>
+#include <NimBLEDevice.h>
 
-class EUC {
+class eucClass {
  public:
-  static EUC& getInstance();
   void debug();
 
+  NimBLEAdvertisedDevice* bleDevice;
   int16_t busVoltage;                 // 0
   int16_t busCurrent;                 // 2
   int16_t speed;                      // 4
@@ -56,11 +56,6 @@ class EUC {
   int brakeState;
   int slowDownState;
   int DFUState;
- private:
-  EUC();
-
-  EUC(const EUC&) = delete;
-  EUC& operator=(const EUC&) = delete;
 };
 
-#endif
+extern eucClass EUC;

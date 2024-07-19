@@ -1,10 +1,7 @@
-#include <EUC.h>
 #include <InmotionV2Message.h>
 
 // Возвращает буфер данных
 uint8_t* InmotionUnpackerV2::getBuffer() {
-  // for (size_t i = 0; i < bufferIndex; i++)
-  //   Serial.printf("%02h ", buffer[i]);
   return buffer;
 }
 
@@ -91,7 +88,6 @@ int InmotionV2Message::shortFromBytesLE(const uint8_t* pData, int starting) {
 }
 
 void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
-  EUC& pEUC = EUC::getInstance();
   // Serial.println("================================================== [NEW MESSAGE] ==================================================");
 
   // Serial.print("🟢 ");
@@ -142,56 +138,56 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
         case (byte)0x04: {
           // Serial.println("[DEBUG] Packet command: 0x04 RealTimeInfo");
 
-          pEUC.busVoltage = shortFromBytesLE(pData, 0);
-          pEUC.busCurrent = signedShortFromBytesLE(pData, 2);
-          pEUC.speed = signedShortFromBytesLE(pData, 4);
-          pEUC.torque = signedShortFromBytesLE(pData, 6);
-          pEUC.outputRate = signedShortFromBytesLE(pData, 8);
-          pEUC.batteryOutputPower = signedShortFromBytesLE(pData, 10);
-          pEUC.motorOutputPower = signedShortFromBytesLE(pData, 12);
-          pEUC.reserve14 = signedShortFromBytesLE(pData, 14);
-          pEUC.pitchAngle = signedShortFromBytesLE(pData, 16);
-          pEUC.rollAngle = signedShortFromBytesLE(pData, 18);
-          pEUC.aimPitchAngle = signedShortFromBytesLE(pData, 20);
-          pEUC.speedingBrakingAngle = shortFromBytesLE(pData, 22);
-          pEUC.mileage = shortFromBytesLE(pData, 24);
-          pEUC.reserve26 = shortFromBytesLE(pData, 26);
-          pEUC.batteryPercentage = shortFromBytesLE(pData, 28);
-          pEUC.batteryPercentageForRide = shortFromBytesLE(pData, 30);
-          pEUC.estimatedTotalMileage = shortFromBytesLE(pData, 32);
-          pEUC.realtimeSpeedLimit = shortFromBytesLE(pData, 34);
-          pEUC.realtimeCurrentLimit = shortFromBytesLE(pData, 36);
-          pEUC.reserve38 = shortFromBytesLE(pData, 38);
-          pEUC.reserve40 = shortFromBytesLE(pData, 40);
-          pEUC.mosTemperature = (pData[5 + 42] & 0xff) + 80 - 256;
-          pEUC.motorTemperature = (pData[5 + 43] & 0xff) + 80 - 256;
-          pEUC.batteryTemperature = (pData[5 + 44] & 0xff) + 80 - 256;  // 0;
-          pEUC.boardTemperature = (pData[5 + 45] & 0xff) + 80 - 256;
-          pEUC.cpuTemperature = (pData[5 + 46] & 0xff) + 80 - 256;
-          pEUC.imuTemperature = (pData[5 + 47] & 0xff) + 80 - 256;
-          pEUC.lampTemperature = (pData[5 + 48] & 0xff) + 80 - 256;  // 0;
-          pEUC.envBrightness = pData[5 + 49] & 0xff;
-          pEUC.lampBrightness = pData[5 + 50] & 0xff;
-          pEUC.reserve51 = pData[5 + 51] & 0xff;
-          pEUC.reserve52 = pData[5 + 52] & 0xff;
-          pEUC.reserve53 = pData[5 + 53] & 0xff;
-          pEUC.reserve54 = pData[5 + 54] & 0xff;
-          pEUC.reserve55 = pData[5 + 55] & 0xff;
+          EUC.busVoltage = shortFromBytesLE(pData, 0);
+          EUC.busCurrent = signedShortFromBytesLE(pData, 2);
+          EUC.speed = signedShortFromBytesLE(pData, 4);
+          EUC.torque = signedShortFromBytesLE(pData, 6);
+          EUC.outputRate = signedShortFromBytesLE(pData, 8);
+          EUC.batteryOutputPower = signedShortFromBytesLE(pData, 10);
+          EUC.motorOutputPower = signedShortFromBytesLE(pData, 12);
+          EUC.reserve14 = signedShortFromBytesLE(pData, 14);
+          EUC.pitchAngle = signedShortFromBytesLE(pData, 16);
+          EUC.rollAngle = signedShortFromBytesLE(pData, 18);
+          EUC.aimPitchAngle = signedShortFromBytesLE(pData, 20);
+          EUC.speedingBrakingAngle = shortFromBytesLE(pData, 22);
+          EUC.mileage = shortFromBytesLE(pData, 24);
+          EUC.reserve26 = shortFromBytesLE(pData, 26);
+          EUC.batteryPercentage = shortFromBytesLE(pData, 28);
+          EUC.batteryPercentageForRide = shortFromBytesLE(pData, 30);
+          EUC.estimatedTotalMileage = shortFromBytesLE(pData, 32);
+          EUC.realtimeSpeedLimit = shortFromBytesLE(pData, 34);
+          EUC.realtimeCurrentLimit = shortFromBytesLE(pData, 36);
+          EUC.reserve38 = shortFromBytesLE(pData, 38);
+          EUC.reserve40 = shortFromBytesLE(pData, 40);
+          EUC.mosTemperature = (pData[5 + 42] & 0xff) + 80 - 256;
+          EUC.motorTemperature = (pData[5 + 43] & 0xff) + 80 - 256;
+          EUC.batteryTemperature = (pData[5 + 44] & 0xff) + 80 - 256;  // 0;
+          EUC.boardTemperature = (pData[5 + 45] & 0xff) + 80 - 256;
+          EUC.cpuTemperature = (pData[5 + 46] & 0xff) + 80 - 256;
+          EUC.imuTemperature = (pData[5 + 47] & 0xff) + 80 - 256;
+          EUC.lampTemperature = (pData[5 + 48] & 0xff) + 80 - 256;  // 0;
+          EUC.envBrightness = pData[5 + 49] & 0xff;
+          EUC.lampBrightness = pData[5 + 50] & 0xff;
+          EUC.reserve51 = pData[5 + 51] & 0xff;
+          EUC.reserve52 = pData[5 + 52] & 0xff;
+          EUC.reserve53 = pData[5 + 53] & 0xff;
+          EUC.reserve54 = pData[5 + 54] & 0xff;
+          EUC.reserve55 = pData[5 + 55] & 0xff;
 
-          pEUC.HMICRunMode = (pData[5 + 56] & 0x07);  // lock, drive, shutdown, idle
-          pEUC.MCRunMode = (pData[5 + 56] >> 3) & 0x07;
-          pEUC.motorState = (pData[5 + 56] >> 6) & 0x01;
-          pEUC.chargeState = (pData[5 + 56] >> 7) & 0x01;
-          pEUC.backupBatteryState = (pData[5 + 57]) & 0x01;
-          pEUC.lampState = (pData[5 + 57] >> 1) & 0x01;
-          pEUC.decorativeLightState = (pData[5 + 57] >> 2) & 0x01;
-          pEUC.liftedState = (pData[5 + 57] >> 3) & 0x03;
-          pEUC.tailLightState = (pData[5 + 57] >> 4) & 0x07; // 3bits; 0 - CLOSED, 1 - LOWLIGHT, 2 - HIGHLIGHT, 3 - BLINKING
-          pEUC.fanState = (pData[5 + 57] >> 7) & 0x01;
-          pEUC.brakeState = (pData[5 + 58]) & 0x01;
-          pEUC.slowDownState = (pData[5 + 58] >> 2) & 0x01;
-          pEUC.DFUState = (pData[5 + 58] >> 3) & 0x01;
-          // pEUC.debug();
+          EUC.HMICRunMode = (pData[5 + 56] & 0x07);  // lock, drive, shutdown, idle
+          EUC.MCRunMode = (pData[5 + 56] >> 3) & 0x07;
+          EUC.motorState = (pData[5 + 56] >> 6) & 0x01;
+          EUC.chargeState = (pData[5 + 56] >> 7) & 0x01;
+          EUC.backupBatteryState = (pData[5 + 57]) & 0x01;
+          EUC.lampState = (pData[5 + 57] >> 1) & 0x01;
+          EUC.decorativeLightState = (pData[5 + 57] >> 2) & 0x01;
+          EUC.liftedState = (pData[5 + 57] >> 3) & 0x03;
+          EUC.tailLightState = (pData[5 + 57] >> 4) & 0x07; // 3bits; 0 - CLOSED, 1 - LOWLIGHT, 2 - HIGHLIGHT, 3 - BLINKING
+          EUC.fanState = (pData[5 + 57] >> 7) & 0x01;
+          EUC.brakeState = (pData[5 + 58]) & 0x01;
+          EUC.slowDownState = (pData[5 + 58] >> 2) & 0x01;
+          EUC.DFUState = (pData[5 + 58] >> 3) & 0x01;
+          // EUC.debug();
           break;
         }
         case (byte)0x05:
@@ -218,6 +214,6 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
       break;
   }
 
-  // pEUC.debug();
+  // EUC.debug();
   // Serial.println();
 }

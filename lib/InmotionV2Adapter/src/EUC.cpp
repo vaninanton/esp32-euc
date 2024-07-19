@@ -1,13 +1,6 @@
 #include "EUC.h"
 
-EUC::EUC() {}
-
-EUC& EUC::getInstance() {
-  static EUC instance;
-  return instance;
-}
-
-void EUC::debug() {
+void eucClass::debug() {
   Serial.printf("busVoltage: %d\n", busVoltage);
   Serial.printf("busCurrent: %d\n", busCurrent);
   Serial.printf("speed: %d\n", speed);
@@ -56,5 +49,6 @@ void EUC::debug() {
   Serial.printf("brakeState: %d\n", brakeState);
   Serial.printf("slowDownState: %d\n", slowDownState);
   Serial.printf("DFUState: %d\n", DFUState);
-
 }
+
+eucClass EUC = eucClass();
