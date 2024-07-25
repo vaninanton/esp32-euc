@@ -1,55 +1,5 @@
 #include <InmotionV2Message.h>
 
-// Возвращает буфер данных
-uint8_t* InmotionUnpackerV2::getBuffer() {
-  return buffer;
-}
-
-size_t InmotionUnpackerV2::getBufferIndex() {
-  return bufferIndex;
-}
-
-bool InmotionUnpackerV2::addChar(uint8_t c) {
-  if (c != 0xA5 || oldc == 0xA5) {
-    switch (state) {
-      case UnpackerState::collecting:
-        buffer[bufferIndex++] = c;
-        if (bufferIndex == len + 5) {
-          state = UnpackerState::done;
-          oldc = 0;
-          return true;
-        }
-        break;
-
-      case UnpackerState::lensearch:
-        buffer[bufferIndex++] = c;
-        len = c;
-        state = UnpackerState::collecting;
-        oldc = c;
-        break;
-
-      case UnpackerState::flagsearch:
-        buffer[bufferIndex++] = c;
-        flags = c;
-        state = UnpackerState::lensearch;
-        oldc = c;
-        break;
-
-      default:
-        if (c == 0xAA && oldc == 0xAA) {
-          bufferIndex = 0;
-          buffer[bufferIndex++] = 0xAA;
-          buffer[bufferIndex++] = 0xAA;
-          state = UnpackerState::flagsearch;
-        }
-        oldc = c;
-    }
-  } else {
-    oldc = c;
-  }
-  return false;
-}
-
 InmotionV2Message::InmotionV2Message() {}
 
 void InmotionV2Message::printHex(const uint8_t* buffer, size_t length) {
@@ -80,11 +30,11 @@ bool InmotionV2Message::verify(const uint8_t* buffer, size_t length) {
 }
 
 uint InmotionV2Message::signedShortFromBytesLE(const uint8_t* pData, int starting) {
-  return ((pData[starting + 5 + 1] << 8) | (pData[starting + 5] & 0xFF));
+  return ((pData[5 + starting + 1] << 8) | (pData[5 + starting] & 0xFF));
 }
 
 int InmotionV2Message::shortFromBytesLE(const uint8_t* pData, int starting) {
-  return ((pData[starting + 5 + 1] & 0xFF) << 8) | (pData[starting + 5] & 0xFF);
+  return ((pData[5 + starting + 1] & 0xFF) << 8) | (pData[5 + starting] & 0xFF);
 }
 
 void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
@@ -161,11 +111,11 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           EUC.reserve40 = shortFromBytesLE(pData, 40);
           EUC.mosTemperature = (pData[5 + 42] & 0xff) + 80 - 256;
           EUC.motorTemperature = (pData[5 + 43] & 0xff) + 80 - 256;
-          EUC.batteryTemperature = (pData[5 + 44] & 0xff) + 80 - 256;  // 0;
+          EUC.batteryTemperature = (pData[5 + 44] & 0xff) + 80 - 256; // 0;
           EUC.boardTemperature = (pData[5 + 45] & 0xff) + 80 - 256;
           EUC.cpuTemperature = (pData[5 + 46] & 0xff) + 80 - 256;
           EUC.imuTemperature = (pData[5 + 47] & 0xff) + 80 - 256;
-          EUC.lampTemperature = (pData[5 + 48] & 0xff) + 80 - 256;  // 0;
+          EUC.lampTemperature = (pData[5 + 48] & 0xff) + 80 - 256; // 0;
           EUC.envBrightness = pData[5 + 49] & 0xff;
           EUC.lampBrightness = pData[5 + 50] & 0xff;
           EUC.reserve51 = pData[5 + 51] & 0xff;
@@ -174,7 +124,7 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           EUC.reserve54 = pData[5 + 54] & 0xff;
           EUC.reserve55 = pData[5 + 55] & 0xff;
 
-          EUC.HMICRunMode = (pData[5 + 56] & 0x07);  // lock, drive, shutdown, idle
+          EUC.HMICRunMode = (pData[5 + 56] & 0x07); // lock, drive, shutdown, idle
           EUC.MCRunMode = (pData[5 + 56] >> 3) & 0x07;
           EUC.motorState = (pData[5 + 56] >> 6) & 0x01;
           EUC.chargeState = (pData[5 + 56] >> 7) & 0x01;

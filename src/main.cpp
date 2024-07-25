@@ -1,23 +1,29 @@
-#define FASTLED_INTERNAL
+#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#define CONFIG_NIMBLE_CPP_LOG_LEVEL 3
 
 #include <Arduino.h>
 #include <EUC.h>
+#include <EncButton.h>
 #include <FastLED.h>
 #include <InmotionV2Message.h>
+#include <InmotionV2Unpacker.h>
 #include <NimBLEDevice.h>
+#include <TimerMs.h>
+#include <esp_log.h>
 
-// Пины
-const int ledPin = 2;
-
-// FastLED
+const int LED_PIN = 2;
 #define DATA_PIN 12
 #define LED_TYPE WS2812B
 #define NUM_LEDS 12
 CRGB leds[NUM_LEDS];
-uint8_t brightness = 10;
+
+static const char* LOG_TAG = "ESP32-EUC";
+
+TimerMs tmrFL(10, 1, false);
+Button btn(0);
 
 // Список сервисов и характеристик
-static const NimBLEUUID serviceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+static const NimBLEUUID uartServiceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
 static const NimBLEUUID txCharUUID("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
 static const NimBLEUUID rxCharUUID("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
 static const NimBLEUUID unknownService1UUID("FFE5");
@@ -25,215 +31,263 @@ static const NimBLEUUID unknownService1CharUUID("FFE9");
 static const NimBLEUUID unknownService2UUID("FFE0");
 static const NimBLEUUID unknownService2CharUUID("FFE4");
 
-static NimBLEClient* bleClient;
-static NimBLEServer* bleServer;
+static NimBLEClient* eucBleClient;
+static NimBLEServer* appBleServer;
 
 static NimBLERemoteService* pRemoteService;
 static NimBLERemoteCharacteristic* rxCharacteristic;
 static NimBLERemoteCharacteristic* txCharacteristic;
 
-InmotionUnpackerV2* unpacker = new InmotionUnpackerV2();
-InmotionV2Message* pMessage = new InmotionV2Message();
+static NimBLEService* appService;
+static NimBLEService* ffe5;
+static NimBLEService* ffe0;
+static NimBLECharacteristic* sTxCharacteristic;
+static NimBLECharacteristic* sRxCharacteristic;
+static NimBLECharacteristic* ffe9Characteristic;
+static NimBLECharacteristic* ffe4Characteristic;
+static NimBLEAdvertising* sAdvertising;
 
-static boolean doScan = false;
-static boolean doConnect = false;
+static InmotionV2Unpacker* unpacker = new InmotionV2Unpacker();
+static InmotionV2Message* pMessage = new InmotionV2Message();
+
+static boolean doScanEUC = false;
+static boolean doConnectToEUC = false;
 static boolean doInit = false;
 static boolean doWork = false;
-static boolean proxyStarted = false;
-static boolean doInitProxy = false;
-static boolean subscribed = false;
 
-/**
- * @brief Проксирование сообщений от приложения к колесу
- */
-class ProxyCallbacks : public NimBLECharacteristicCallbacks {
-  // onRead
-  void onWrite(NimBLECharacteristic* pCharacteristic) {
-    digitalWrite(ledPin, HIGH);
-    if (bleClient->isConnected() && doWork == true) {
-      Serial.print(">");
-      bleClient->getService(serviceUUID)->getCharacteristic(pCharacteristic->getUUID())->writeValue(pCharacteristic->getValue().data(), pCharacteristic->getDataLength(), false);
-    }
-    digitalWrite(ledPin, LOW);
+CRGBPalette16 currentPalette = OceanColors_p;
+TBlendType currentBlending = LINEARBLEND;
+uint8_t brightness = 10;
+uint8_t startIndex = 0;
+
+uint8_t palleteButtonIndex = 0;
+uint8_t brightnessButtonIndex = 0;
+
+/** @brief Received message from app, proxy it to euc */
+static void appMessageReceived(NimBLECharacteristic* pCharacteristic) {
+  ESP_LOGD(LOG_TAG, "A");
+  if (eucBleClient->isConnected() == false || doWork == false) {
+    ESP_LOGW(LOG_TAG, "EUC is not connected, message will be dropped");
+    return;
   }
 
-  void onSubscribe(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc, uint16_t subValue) {
-    if (subValue == 0) {
-      Serial.println("Unsubscribed");
-      subscribed = false;
-    } else if (subValue == 1) {
-      Serial.println("Subscribed to notfications");
-      subscribed = true;
-    } else if (subValue == 2) {
-      Serial.println("Subscribed to indications");
-      subscribed = true;
-    } else if (subValue == 3) {
-      Serial.println("Subscribed to notifications and indications");
-      subscribed = true;
-    }
-  }
-};
+  eucBleClient->getService(uartServiceUUID)->getCharacteristic(pCharacteristic->getUUID())->writeValue(pCharacteristic->getValue().data(), pCharacteristic->getDataLength(), false);
+}
 
-/** @brief Коллбек при получении ответа от колеса */
-static void eucMessageReceived(NimBLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
-  digitalWrite(ledPin, HIGH);
-  Serial.print("<");
-  for (size_t i = 0; i < length; i++) {
-    if (unpacker->addChar(pData[i]) == true) {
+/** @brief Received message from euc, proxy it to app and parse to EUC object */
+static void eucNotifyReceived(NimBLERemoteCharacteristic* eucCharacteristic, uint8_t* data, size_t dataLength, bool isNotify) {
+  digitalWrite(LED_PIN, HIGH);
+  ESP_LOGD(LOG_TAG, "E");
+
+  for (size_t i = 0; i < dataLength; i++) {
+    if (unpacker->addChar(data[i]) == true) {
       uint8_t* buffer = unpacker->getBuffer();
-      size_t bufferIndex = unpacker->getBufferIndex();
+      size_t bufferLength = unpacker->getBufferIndex();
 
-      pMessage->parse(buffer, bufferIndex);
+      pMessage->parse(buffer, bufferLength);
     }
   }
 
-  if (subscribed == false) {
-    digitalWrite(ledPin, LOW);
+  if (doWork == false) {
+    ESP_LOGW(LOG_TAG, "Couldn't proxy message to app, because app was not connected");
+    digitalWrite(LED_PIN, LOW);
     return;
   }
 
-  if (bleServer->getConnectedCount() == 0) {
-    digitalWrite(ledPin, LOW);
-    return;
-  }
-
-  NimBLEService* pSvc = bleServer->getServiceByUUID(serviceUUID);
-
-  if (pSvc == nullptr) {
-    digitalWrite(ledPin, LOW);
-    return;
-  }
-
-  NimBLECharacteristic* pChr = pSvc->getCharacteristic(rxCharUUID);
-
-  if (pChr == nullptr) {
-    digitalWrite(ledPin, LOW);
-    return;
-  }
-
-  pChr->notify(pData, length, true);
-  digitalWrite(ledPin, LOW);
+  NimBLEService* service = appBleServer->getServiceByUUID(eucCharacteristic->getRemoteService()->getUUID());
+  NimBLECharacteristic* characteristic = service->getCharacteristic(eucCharacteristic->getUUID());
+  characteristic->notify(data, dataLength, true);
+  digitalWrite(LED_PIN, LOW);
 }
 
 class EUCFoundDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-    if (advertisedDevice->getName() == "" || !advertisedDevice->isAdvertisingService(serviceUUID))
+    // Skip if it's not the service we're looking for
+    if (advertisedDevice->getName() == "" || !advertisedDevice->isAdvertisingService(uartServiceUUID))
       return;
 
-    // Мы нашли подходящее устройство, останавливаем сканирование
+    // We have found a device, but it's not yet connected
     NimBLEDevice::getScan()->stop();
 
     EUC.bleDevice = advertisedDevice;
-    Serial.printf("[BLE] %s\n", EUC.bleDevice->getName().c_str());
-    doConnect = true;
+    ESP_LOGI(LOG_TAG, "Found %s", EUC.bleDevice->getName().c_str());
+    doConnectToEUC = true;
   }
 };
+
+/** @brief Проксирование сообщений от приложения к колесу */
+class ProxyCallbacks : public NimBLECharacteristicCallbacks {
+  // void onRead(NimBLECharacteristic* pCharacteristic) {}
+  void onWrite(NimBLECharacteristic* pCharacteristic) { appMessageReceived(pCharacteristic); }
+
+  void onSubscribe(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc, uint16_t subValue) {
+    doWork = subValue > 0;
+    if (doWork) {
+      ESP_LOGI(LOG_TAG, "App subscribed");
+      currentPalette = PartyColors_p;
+      brightness = 30;
+    } else {
+      ESP_LOGI(LOG_TAG, "App unsubscribed");
+      currentPalette = ForestColors_p;
+      brightness = 10;
+    }
+  }
+};
+
+void scanEUC() {
+  doScanEUC = false;
+  NimBLEScan* pScan = NimBLEDevice::getScan();
+  pScan->setAdvertisedDeviceCallbacks(new EUCFoundDeviceCallbacks(), false);
+  pScan->setInterval(100);
+  pScan->setWindow(99);
+  pScan->setActiveScan(true);
+  pScan->start(15);
+}
+
+void connectToEUC() {
+  ESP_LOGI("ESP32-BLE", "Connecting to... %s", EUC.bleDevice->getName().c_str());
+  doConnectToEUC = false;
+  if (eucBleClient->isConnected()) {
+    eucBleClient->disconnect();
+  }
+  bool connected = eucBleClient->connect(EUC.bleDevice, true);
+  if (!connected) {
+    doConnectToEUC = true;
+    return;
+  }
+  doInit = true;
+  currentPalette = ForestColors_p;
+}
+
+void initEUC() {
+  ESP_LOGD("ESP32-BLE", "Initializing client services...");
+  doInit = false;
+
+  NimBLERemoteService* pRemoteService = eucBleClient->getService(uartServiceUUID);
+  txCharacteristic = pRemoteService->getCharacteristic(txCharUUID);
+  rxCharacteristic = pRemoteService->getCharacteristic(rxCharUUID);
+  rxCharacteristic->subscribe(true, eucNotifyReceived, false);
+
+  sTxCharacteristic->setCallbacks(new ProxyCallbacks());
+  sRxCharacteristic->setCallbacks(new ProxyCallbacks());
+  ffe9Characteristic->setCallbacks(new ProxyCallbacks());
+  ffe4Characteristic->setCallbacks(new ProxyCallbacks());
+  sAdvertising->start();
+
+  ESP_LOGI("ESP32-BLE", "EUC initialized!");
+}
 
 //////////////////////////////////
 //////////////////////////////////
 //////////////////////////////////
 
 void setup() {
-  pinMode(ledPin, OUTPUT);
+  esp_log_level_set("*", ESP_LOG_VERBOSE);
+  esp_log_level_set("NimappBleServer", ESP_LOG_WARN);
+  esp_log_level_set("NimBLEAdvertising", ESP_LOG_WARN);
+  esp_log_level_set("NimBLEScan", ESP_LOG_WARN);
+  esp_log_level_set("NimBLEClient", ESP_LOG_WARN);
+  esp_log_level_set("NimBLEService", ESP_LOG_WARN);
+  esp_log_level_set("NimBLEDevice", ESP_LOG_WARN);
+  esp_log_level_set("NimBLECharacteristic", ESP_LOG_WARN);
+  esp_log_level_set("NimBLECharacteristicCallbacks", ESP_LOG_WARN);
+  // esp_log_level_set("wifi", ESP_LOG_WARN);
+  esp_log_level_set(LOG_TAG, ESP_LOG_VERBOSE);
+
+  pinMode(LED_PIN, OUTPUT);
 
   FastLED.addLeds<LED_TYPE, DATA_PIN, GRB>(leds, NUM_LEDS);
-  FastLED.setDither(false);
   FastLED.setCorrection(TypicalLEDStrip);
-  FastLED.setBrightness(20);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 100);
+  // FastLED.setBrightness(10);
+
   fill_solid(leds, NUM_LEDS, CRGB::Black);
   FastLED.show();
 
-  Serial.begin(115200);
-  Serial.println();
-  Serial.println("[INFO] Starting ESP32-EUC application...");
+  // Serial.begin(115200);
+  ESP_LOGI(LOG_TAG, "Starting ESP32-EUC application...");
 
   NimBLEDevice::init("V11-ESP32EUC");
-  bleClient = NimBLEDevice::createClient();
-  bleServer = NimBLEDevice::createServer();
+  eucBleClient = NimBLEDevice::createClient();
+  appBleServer = NimBLEDevice::createServer();
 
-  NimBLEService* sService = bleServer->createService(serviceUUID);
-  NimBLEService* ffe5 = bleServer->createService(NimBLEUUID("FFE5"));
-  NimBLEService* ffe0 = bleServer->createService(NimBLEUUID("FFE0"));
+  appService = appBleServer->createService(uartServiceUUID);
+  ffe5 = appBleServer->createService(unknownService1UUID);
+  ffe0 = appBleServer->createService(unknownService2UUID);
 
-  NimBLECharacteristic* sTxCharacteristic = sService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  NimBLECharacteristic* sRxCharacteristic = sService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
-  NimBLECharacteristic* ffe9Characteristic = ffe5->createCharacteristic(NimBLEUUID("FFE9"), NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  NimBLECharacteristic* ffe4Characteristic = ffe0->createCharacteristic(NimBLEUUID("FFE4"), NIMBLE_PROPERTY::NOTIFY);
+  sTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  sRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
+  ffe9Characteristic = ffe5->createCharacteristic(unknownService1CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  ffe4Characteristic = ffe0->createCharacteristic(unknownService2CharUUID, NIMBLE_PROPERTY::NOTIFY);
 
-  sTxCharacteristic->setCallbacks(new ProxyCallbacks());
-  sRxCharacteristic->setCallbacks(new ProxyCallbacks());
-  ffe9Characteristic->setCallbacks(new ProxyCallbacks());
-  ffe4Characteristic->setCallbacks(new ProxyCallbacks());
-
-  bool serviceStarted = sService->start();
-  if (serviceStarted == false) {
-    Serial.println("[BLE] Service failed to start");
-    ESP.restart();
-  }
-  NimBLEAdvertising* sAdvertising = NimBLEDevice::getAdvertising();
-  sAdvertising->addServiceUUID(serviceUUID);
-  bool advertisingStarted = sAdvertising->start();
-  if (advertisingStarted == false) {
-    Serial.println("[BLE] Advertising failed to start");
-    ESP.restart();
-  }
+  appService->start();
+  sAdvertising = NimBLEDevice::getAdvertising();
+  sAdvertising->addServiceUUID(uartServiceUUID);
+  sAdvertising->start();
+  sAdvertising->stop();
   // /Прокси
 
   // Запланировали сканирование
-  doScan = true;
+  doScanEUC = true;
+}
+
+#include <effects.h>
+
+void FillLEDsFromPaletteColors(uint8_t colorIndex) {
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = ColorFromPalette(currentPalette, colorIndex, brightness, currentBlending);
+    colorIndex += 3;
+  }
 }
 
 void loop() {
-  if (doScan == true) {
-    doScan = false;
-    NimBLEScan* pScan = NimBLEDevice::getScan();
-    pScan->setAdvertisedDeviceCallbacks(new EUCFoundDeviceCallbacks(), false);
-    pScan->setInterval(100);
-    pScan->setWindow(99);
-    pScan->setActiveScan(true);
-    pScan->start(15);
-  } else if (doConnect == true) {
-    doConnect = false;
-    Serial.printf("[BLE] Connecting to... %s\n", EUC.bleDevice->getName().c_str());
-    bool connected = bleClient->connect(EUC.bleDevice, true);
-    if (connected) {
-      doInit = true;
-    }
+  btn.tick();
+
+  if (doScanEUC == true) {
+    currentPalette = OceanColors_p;
+    brightness = 1;
+    scanEUC();
+  } else if (doConnectToEUC == true) {
+    currentPalette = OceanColors_p;
+    brightness = 5;
+    connectToEUC();
   } else if (doInit == true) {
-    Serial.println("[BLE] Initializing client");
-    doInit = false;
+    currentPalette = OceanColors_p;
+    brightness = 10;
+    initEUC();
+  } else if (doWork == false) {
 
-    NimBLERemoteService* pRemoteService = bleClient->getService(serviceUUID);
-    txCharacteristic = pRemoteService->getCharacteristic(txCharUUID);
-    rxCharacteristic = pRemoteService->getCharacteristic(rxCharUUID);
-    if (txCharacteristic == nullptr || rxCharacteristic == nullptr) {
-      Serial.println("[BLE] RemoteCharacteristics not found!");
-      doInit == true;
-      return;
-    }
-
-    bool subscribed = rxCharacteristic->subscribe(true, eucMessageReceived, false);
-    if (subscribed) {
-      Serial.println("Subscribed!");
-      doInitProxy = true;
-    }
-    Serial.println("Initialized client!");
-  } else if (doInitProxy == true) {
-    doInitProxy = false;
-    doWork = true;
   } else if (doWork == true) {
+    // juggle();
+  }
 
-    int ledsRoll = map(EUC.pitchAngle, -1500, 1500, 0, 12);
-    // Serial.println(ledsRoll);
-    for (int i = 0; i < NUM_LEDS; i++) {
-      if (i < ledsRoll) {
-        leds[i] = CRGB::PowderBlue;
-      } else {
-        leds[i] = CRGB::Black;
-      }
+  if (btn.click()) {
+    palleteButtonIndex++;
+    if (palleteButtonIndex == 9) {
+      palleteButtonIndex = 1;
     }
-    FastLED.show();
+    switch (palleteButtonIndex) {
+      case 1: currentPalette = CloudColors_p; break;
+      case 2: currentPalette = LavaColors_p; break;
+      case 3: currentPalette = OceanColors_p; break;
+      case 4: currentPalette = ForestColors_p; break;
+      case 5: currentPalette = RainbowColors_p; break;
+      case 6: currentPalette = RainbowStripeColors_p; break;
+      case 7: currentPalette = PartyColors_p; break;
+      case 8: currentPalette = HeatColors_p; break;
+    }
+  }
 
+  if (btn.hold()) {
+    brightness = brightness + 50;
+    if (brightness >= 255) {
+      brightness = 1;
+    }
+  }
+
+  if (tmrFL.tick()) {
+    startIndex = startIndex + 1;
+    FillLEDsFromPaletteColors(startIndex);
+    FastLED.show();
   }
 }
