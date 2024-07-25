@@ -65,7 +65,7 @@ uint8_t brightnessButtonIndex = 0;
 
 /** @brief Received message from app, proxy it to euc */
 static void appMessageReceived(NimBLECharacteristic* pCharacteristic) {
-  ESP_LOGD(LOG_TAG, "A");
+  // ESP_LOGD(LOG_TAG, "A");
   if (eucBleClient->isConnected() == false || doWork == false) {
     ESP_LOGW(LOG_TAG, "EUC is not connected, message will be dropped");
     return;
@@ -77,7 +77,7 @@ static void appMessageReceived(NimBLECharacteristic* pCharacteristic) {
 /** @brief Received message from euc, proxy it to app and parse to EUC object */
 static void eucNotifyReceived(NimBLERemoteCharacteristic* eucCharacteristic, uint8_t* data, size_t dataLength, bool isNotify) {
   digitalWrite(LED_PIN, HIGH);
-  ESP_LOGD(LOG_TAG, "E");
+  // ESP_LOGD(LOG_TAG, "E");
 
   for (size_t i = 0; i < dataLength; i++) {
     if (unpacker->addChar(data[i]) == true) {
@@ -192,7 +192,7 @@ void setup() {
   esp_log_level_set("NimBLECharacteristic", ESP_LOG_WARN);
   esp_log_level_set("NimBLECharacteristicCallbacks", ESP_LOG_WARN);
   // esp_log_level_set("wifi", ESP_LOG_WARN);
-  esp_log_level_set(LOG_TAG, ESP_LOG_VERBOSE);
+  esp_log_level_set(LOG_TAG, ESP_LOG_INFO);
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -261,7 +261,7 @@ void loop() {
     // juggle();
   }
 
-  if (btn.click()) {
+  if (btn.click(2)) {
     palleteButtonIndex++;
     if (palleteButtonIndex == 9) {
       palleteButtonIndex = 1;
@@ -276,13 +276,20 @@ void loop() {
       case 7: currentPalette = PartyColors_p; break;
       case 8: currentPalette = HeatColors_p; break;
     }
+    ESP_LOGI(LOG_TAG, "Changed palette to %d", palleteButtonIndex);
   }
 
-  if (btn.hold()) {
-    brightness = brightness + 50;
-    if (brightness >= 255) {
-      brightness = 1;
+  if (btn.step()) {
+    if (btn.stepFor(2000)) {
+      brightness += 5;
+    } else {
+      brightness += 1;
     }
+    ESP_LOGI(LOG_TAG, "Changed brightness to %d", brightness);
+  }
+
+  if (brightness >= 255) {
+    brightness = 1;
   }
 
   if (tmrFL.tick()) {
