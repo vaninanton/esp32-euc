@@ -20,6 +20,7 @@ CRGB leds[NUM_LEDS];
 static const char* LOG_TAG = "ESP32-EUC";
 
 TimerMs tmrFL(10, 1, false);
+TimerMs tmrDbg(1000, 1, false);
 Button btn(0);
 
 // Список сервисов и характеристик
@@ -55,13 +56,14 @@ static boolean doConnectToEUC = false;
 static boolean doInit = false;
 static boolean doWork = false;
 
+CRGBPalette16 previousPalette = OceanColors_p;
 CRGBPalette16 currentPalette = OceanColors_p;
 TBlendType currentBlending = LINEARBLEND;
 uint8_t brightness = 10;
 uint8_t startIndex = 0;
 
 uint8_t palleteButtonIndex = 0;
-uint8_t brightnessButtonIndex = 0;
+uint8_t modeButtonIndex = 0;
 
 /** @brief Received message from app, proxy it to euc */
 static void appMessageReceived(NimBLECharacteristic* pCharacteristic) {
@@ -124,6 +126,7 @@ class ProxyCallbacks : public NimBLECharacteristicCallbacks {
     doWork = subValue > 0;
     if (doWork) {
       ESP_LOGI(LOG_TAG, "App subscribed");
+      modeButtonIndex = 1;
       currentPalette = PartyColors_p;
       brightness = 30;
     } else {
@@ -244,39 +247,39 @@ void loop() {
   btn.tick();
 
   if (doScanEUC == true) {
-    currentPalette = OceanColors_p;
-    brightness = 1;
     scanEUC();
   } else if (doConnectToEUC == true) {
-    currentPalette = OceanColors_p;
-    brightness = 5;
     connectToEUC();
   } else if (doInit == true) {
-    currentPalette = OceanColors_p;
-    brightness = 10;
     initEUC();
   } else if (doWork == false) {
-
   } else if (doWork == true) {
-    // juggle();
+    if (tmrDbg.tick()) {
+      EUC.debug();
+    }
   }
 
-  if (btn.click(2)) {
+  if (btn.click(3)) {
     palleteButtonIndex++;
-    if (palleteButtonIndex == 9) {
-      palleteButtonIndex = 1;
-    }
-    switch (palleteButtonIndex) {
-      case 1: currentPalette = CloudColors_p; break;
-      case 2: currentPalette = LavaColors_p; break;
-      case 3: currentPalette = OceanColors_p; break;
-      case 4: currentPalette = ForestColors_p; break;
-      case 5: currentPalette = RainbowColors_p; break;
-      case 6: currentPalette = RainbowStripeColors_p; break;
-      case 7: currentPalette = PartyColors_p; break;
-      case 8: currentPalette = HeatColors_p; break;
+    if (palleteButtonIndex >= 8) {
+      palleteButtonIndex = 0;
     }
     ESP_LOGI(LOG_TAG, "Changed palette to %d", palleteButtonIndex);
+  } else if (btn.click(2)) {
+    modeButtonIndex++;
+    if (modeButtonIndex >= 2) { modeButtonIndex = 0; }
+    ESP_LOGI(LOG_TAG, "Changed mode to %d", modeButtonIndex);
+  }
+
+  switch (palleteButtonIndex) {
+    case 0: currentPalette = CloudColors_p; break;
+    case 1: currentPalette = LavaColors_p; break;
+    case 2: currentPalette = OceanColors_p; break;
+    case 3: currentPalette = ForestColors_p; break;
+    case 4: currentPalette = RainbowColors_p; break;
+    case 5: currentPalette = RainbowStripeColors_p; break;
+    case 6: currentPalette = PartyColors_p; break;
+    case 7: currentPalette = HeatColors_p; break;
   }
 
   if (btn.step()) {
@@ -285,16 +288,25 @@ void loop() {
     } else {
       brightness += 1;
     }
+    if (brightness >= 255) {
+      brightness = 1;
+    }
     ESP_LOGI(LOG_TAG, "Changed brightness to %d", brightness);
-  }
-
-  if (brightness >= 255) {
-    brightness = 1;
   }
 
   if (tmrFL.tick()) {
     startIndex = startIndex + 1;
-    FillLEDsFromPaletteColors(startIndex);
+    if (EUC.speed > 0) {
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
+      fill_solid(leds, map(EUC.speed, 0, 4000, 0, NUM_LEDS), CRGB::Red);
+    } else if (EUC.speed > 0) {
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
+      fill_solid(leds, map(EUC.speed * -1, 0, -4000, 0, NUM_LEDS), CRGB::Red);
+    } else if (modeButtonIndex == 0) {
+      FillLEDsFromPaletteColors(startIndex);
+    } else if (modeButtonIndex == 1) {
+      juggle();
+    }
     FastLED.show();
   }
 }

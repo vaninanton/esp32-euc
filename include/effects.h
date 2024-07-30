@@ -5,7 +5,7 @@ void juggle() {
   fadeToBlackBy(leds, NUM_LEDS, 20);
   uint8_t dothue = 0;
   for (int i = 0; i < 8; i++) {
-    leds[beatsin16(i + 7, 0, NUM_LEDS - 1)] |= CHSV(dothue, 200, 25);
+    leds[beatsin16(i + 7, 0, NUM_LEDS - 1)] |= CHSV(dothue, 200, brightness);
     dothue += 32;
   }
 }
