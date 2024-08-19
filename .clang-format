@@ -1,5 +1,6 @@
 ---
-BasedOnStyle: Chromium
+Language: Cpp
+# BasedOnStyle:  Chromium
 AccessModifierOffset: -1
 AlignAfterOpenBracket: Align
 AlignArrayOfStructures: None
@@ -66,12 +67,12 @@ BraceWrapping:
   AfterClass: false
   AfterControlStatement: Never
   AfterEnum: false
+  AfterExternBlock: false
   AfterFunction: false
   AfterNamespace: false
   AfterObjCDeclaration: false
   AfterStruct: false
   AfterUnion: false
-  AfterExternBlock: false
   BeforeCatch: false
   BeforeElse: false
   BeforeLambdaBody: false
@@ -85,8 +86,8 @@ BreakAfterAttributes: Leave
 BreakAfterJavaFieldAnnotations: false
 BreakArrays: true
 BreakBeforeBinaryOperators: None
-BreakBeforeBraces: Attach
 BreakBeforeConceptDeclarations: Always
+BreakBeforeBraces: Attach
 BreakBeforeInlineASMColon: OnlyMultiline
 BreakBeforeTernaryOperators: true
 BreakConstructorInitializers: BeforeColon
@@ -112,23 +113,23 @@ IfMacros:
   - KJ_IF_MAYBE
 IncludeBlocks: Preserve
 IncludeCategories:
-  - Regex: ^<ext/.*\.h>
+  - Regex: '^<ext/.*\.h>'
     Priority: 2
     SortPriority: 0
     CaseSensitive: false
-  - Regex: ^<.*\.h>
+  - Regex: '^<.*\.h>'
     Priority: 1
     SortPriority: 0
     CaseSensitive: false
-  - Regex: ^<.*
+  - Regex: "^<.*"
     Priority: 2
     SortPriority: 0
     CaseSensitive: false
-  - Regex: .*
+  - Regex: ".*"
     Priority: 3
     SortPriority: 0
     CaseSensitive: false
-IncludeIsMainRegex: ([-_](test|unittest))?$
+IncludeIsMainRegex: "([-_](test|unittest))?$"
 IncludeIsMainSourceRegex: ""
 IndentAccessModifiers: false
 IndentCaseBlocks: false
@@ -151,10 +152,9 @@ IntegerLiteralSeparator:
   HexMinDigits: 0
 JavaScriptQuotes: Leave
 JavaScriptWrapImports: true
-KeepEmptyLinesAtEOF: false
 KeepEmptyLinesAtTheStartOfBlocks: false
+KeepEmptyLinesAtEOF: false
 LambdaBodyIndentation: Signature
-Language: Cpp
 LineEnding: DeriveLF
 MacroBlockBegin: ""
 MacroBlockEnd: ""
@@ -165,7 +165,6 @@ ObjCBlockIndentWidth: 2
 ObjCBreakBeforeNestedBlockParam: true
 ObjCSpaceAfterProperty: false
 ObjCSpaceBeforeProtocolList: true
-PPIndentWidth: -1
 PackConstructorInitializers: NextLine
 PenaltyBreakAssignment: 2
 PenaltyBreakBeforeFirstCallParameter: 1
@@ -179,6 +178,7 @@ PenaltyExcessCharacter: 1000000
 PenaltyIndentedWhitespace: 0
 PenaltyReturnTypeOnItsOwnLine: 200
 PointerAlignment: Left
+PPIndentWidth: -1
 QualifierAlignment: Leave
 RawStringFormats:
   - Language: Cpp
@@ -188,8 +188,8 @@ RawStringFormats:
       - cpp
       - Cpp
       - CPP
-      - c++
-      - C++
+      - "c++"
+      - "C++"
     CanonicalDelimiter: ""
     BasedOnStyle: google
   - Language: TextProto
@@ -237,8 +237,8 @@ SpaceBeforeParens: ControlStatements
 SpaceBeforeParensOptions:
   AfterControlStatements: true
   AfterForeachMacros: true
-  AfterFunctionDeclarationName: false
   AfterFunctionDefinitionName: false
+  AfterFunctionDeclarationName: false
   AfterIfMacros: true
   AfterOverloadedOperator: false
   AfterPlacementOperator: true
@@ -256,8 +256,8 @@ SpacesInLineCommentPrefix:
   Maximum: -1
 SpacesInParens: Never
 SpacesInParensOptions:
-  InConditionalStatements: false
   InCStyleCasts: false
+  InConditionalStatements: false
   InEmptyParentheses: false
   Other: false
 SpacesInSquareBrackets: false
@@ -276,3 +276,5 @@ WhitespaceSensitiveMacros:
   - NS_SWIFT_NAME
   - PP_STRINGIZE
   - STRINGIZE
+---
+

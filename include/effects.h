@@ -10,12 +10,12 @@ void juggle() {
   }
 }
 
-// void FillLEDsFromPaletteColors(uint8_t colorIndex) {
-//   for (int i = 0; i < NUM_LEDS; i++) {
-//     leds[i] = ColorFromPalette(currentPalette, colorIndex, brightness, currentBlending);
-//     colorIndex += 3;
-//   }
-// }
+void FillLEDsFromPaletteColors(uint8_t colorIndex, uint8_t maxLed) {
+  for (int i = 0; i < maxLed; i++) {
+    leds[i] = ColorFromPalette(currentPalette, colorIndex, brightness, currentBlending);
+    colorIndex += 3;
+  }
+}
 
 // // This function fills the palette with totally random colors.
 // void SetupTotallyRandomPalette() {

@@ -1,5 +1,7 @@
 #include <InmotionV2Message.h>
 
+static const char* LOG_TAG = "EUC";
+
 InmotionV2Message::InmotionV2Message() {}
 
 void InmotionV2Message::printHex(const uint8_t* buffer, size_t length) {
@@ -21,11 +23,11 @@ bool InmotionV2Message::verify(const uint8_t* buffer, size_t length) {
   uint8_t currentChecksum = buffer[length - 1];
   bool checksumVerified = (currentChecksum == xorVal);
   if (!checksumVerified) {
-    Serial.printf("[WARNING] Checksum failed! it should be 0x%02hX, but 0x%02hX\n", xorVal, currentChecksum);
+    ESP_LOGW(LOG_TAG, "Checksum failed! it should be 0x%02hX, but 0x%02hX", xorVal, currentChecksum);
     return false;
   }
 
-  // Serial.printf("[DEBUG] Checksum 0x%02hX ok\n", xorVal);
+  ESP_LOGD(LOG_TAG, "Checksum 0x%02hX ok", xorVal);
   return checksumVerified;
 }
 
@@ -62,31 +64,31 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
 
   switch (flag) {
     case (byte)0x00:
-      // Serial.println("[DEBUG] Packet flag: 0x00 NoOp");
+      // ESP_LOGD(LOG_TAG, "[DEBUG] Packet flag: 0x00 NoOp");
       break;
     case (byte)0x11:
-      // Serial.println("[DEBUG] Packet flag: 0x11 TotalStats");
+      // ESP_LOGD(LOG_TAG, "[DEBUG] Packet flag: 0x11 TotalStats");
       break;
     case (byte)0x13:
-      // Serial.println("[DEBUG] Packet flag: 0x13 UnknownFlag");
+      // ESP_LOGD(LOG_TAG, "[DEBUG] Packet flag: 0x13 UnknownFlag");
       break;
     case (byte)0x14: {
-      // Serial.println("[DEBUG] Packet flag: 0x14 Default");
+      // ESP_LOGD(LOG_TAG, "[DEBUG] Packet flag: 0x14 Default");
       switch (command) {
         case (byte)0x00:
-          // Serial.println("[DEBUG] Packet command: 0x00 NoOp");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x00 NoOp");
           break;
         case (byte)0x01:
-          // Serial.println("[DEBUG] Packet command: 0x01 MainVersion");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x01 MainVersion");
           break;
         case (byte)0x02:
-          // Serial.println("[DEBUG] Packet command: 0x02 MainInfo");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x02 MainInfo");
           break;
         case (byte)0x03:
-          // Serial.println("[DEBUG] Packet command: 0x03 Diagnostic");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x03 Diagnostic");
           break;
         case (byte)0x04: {
-          // Serial.println("[DEBUG] Packet command: 0x04 RealTimeInfo");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x04 RealTimeInfo");
 
           EUC.busVoltage = shortFromBytesLE(pData, 0);
           EUC.busCurrent = signedShortFromBytesLE(pData, 2);
@@ -137,33 +139,29 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           EUC.brakeState = (pData[5 + 58]) & 0x01;
           EUC.slowDownState = (pData[5 + 58] >> 2) & 0x01;
           EUC.DFUState = (pData[5 + 58] >> 3) & 0x01;
-          // EUC.debug();
           break;
         }
         case (byte)0x05:
-          // Serial.println("[DEBUG] Packet command: 0x05 BatteryRealTimeInfo");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x05 BatteryRealTimeInfo");
           break;
         case (byte)0x10:
-          // Serial.println("[DEBUG] Packet command: 0x10 Something");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x10 Something");
           break;
         case (byte)0x20:
-          // Serial.println("[DEBUG] Packet command: 0x20 Settings");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x20 Settings");
           break;
         case (byte)0x60:
-          // Serial.println("[DEBUG] Packet command: 0x60 Control");
+          // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x60 Control");
           break;
 
         default:
-          // Serial.printf("[WARN] Unknown command: 0x%02hX\n", command);
+          ESP_LOGW(LOG_TAG, "[WARN] Unknown command: 0x%02hX\n", command);
           break;
       }
       break;
     }
     default:
-      // Serial.printf("[WARN] Unknown flag: 0x%02hX\n", flag);
+      ESP_LOGW(LOG_TAG, "[WARN] Unknown flag: 0x%02hX\n", flag);
       break;
   }
-
-  // EUC.debug();
-  // Serial.println();
 }

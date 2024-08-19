@@ -2,24 +2,35 @@
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 3
 
 #include <Arduino.h>
+#include <EEPROM.h>
 #include <EUC.h>
 #include <EncButton.h>
 #include <FastLED.h>
+#include <FileData.h>
 #include <InmotionV2Message.h>
 #include <InmotionV2Unpacker.h>
+#include <LittleFS.h>
 #include <NimBLEDevice.h>
 #include <TimerMs.h>
 #include <esp_log.h>
 
 const int LED_PIN = 2;
-#define DATA_PIN 12
+#define DATA_PIN 13
 #define LED_TYPE WS2812B
-#define NUM_LEDS 12
+#define NUM_LEDS 17
 CRGB leds[NUM_LEDS];
+
+struct Settings {
+  uint8_t brightnessButtonIndex = 0;
+  uint8_t palleteButtonIndex = 0;
+  uint8_t modeButtonIndex = 0;
+};
+Settings mysettings;
+FileData settingsData(&LittleFS, "/settings.dat", 'B', &mysettings, sizeof(mysettings));
 
 static const char* LOG_TAG = "ESP32-EUC";
 
-TimerMs tmrFL(10, 1, false);
+TimerMs tmrLed(10, 1, false);
 TimerMs tmrDbg(1000, 1, false);
 Button btn(0);
 
@@ -56,18 +67,14 @@ static boolean doConnectToEUC = false;
 static boolean doInit = false;
 static boolean doWork = false;
 
-CRGBPalette16 previousPalette = OceanColors_p;
 CRGBPalette16 currentPalette = OceanColors_p;
 TBlendType currentBlending = LINEARBLEND;
-uint8_t brightness = 10;
+uint8_t brightness = 30;
 uint8_t startIndex = 0;
-
-uint8_t palleteButtonIndex = 0;
-uint8_t modeButtonIndex = 0;
+uint8_t maxLeds = NUM_LEDS;
 
 /** @brief Received message from app, proxy it to euc */
-static void appMessageReceived(NimBLECharacteristic* pCharacteristic) {
-  // ESP_LOGD(LOG_TAG, "A");
+static void appNotifyReceived(NimBLECharacteristic* pCharacteristic) {
   if (eucBleClient->isConnected() == false || doWork == false) {
     ESP_LOGW(LOG_TAG, "EUC is not connected, message will be dropped");
     return;
@@ -79,7 +86,6 @@ static void appMessageReceived(NimBLECharacteristic* pCharacteristic) {
 /** @brief Received message from euc, proxy it to app and parse to EUC object */
 static void eucNotifyReceived(NimBLERemoteCharacteristic* eucCharacteristic, uint8_t* data, size_t dataLength, bool isNotify) {
   digitalWrite(LED_PIN, HIGH);
-  // ESP_LOGD(LOG_TAG, "E");
 
   for (size_t i = 0; i < dataLength; i++) {
     if (unpacker->addChar(data[i]) == true) {
@@ -112,27 +118,21 @@ class EUCFoundDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     NimBLEDevice::getScan()->stop();
 
     EUC.bleDevice = advertisedDevice;
-    ESP_LOGI(LOG_TAG, "Found %s", EUC.bleDevice->getName().c_str());
+    ESP_LOGI(LOG_TAG, "Found %s", EUC.bleDevice->getAddress().toString().c_str());
     doConnectToEUC = true;
   }
 };
 
 /** @brief Проксирование сообщений от приложения к колесу */
 class ProxyCallbacks : public NimBLECharacteristicCallbacks {
-  // void onRead(NimBLECharacteristic* pCharacteristic) {}
-  void onWrite(NimBLECharacteristic* pCharacteristic) { appMessageReceived(pCharacteristic); }
+  void onWrite(NimBLECharacteristic* pCharacteristic) { appNotifyReceived(pCharacteristic); }
 
   void onSubscribe(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc, uint16_t subValue) {
     doWork = subValue > 0;
     if (doWork) {
       ESP_LOGI(LOG_TAG, "App subscribed");
-      modeButtonIndex = 1;
-      currentPalette = PartyColors_p;
-      brightness = 30;
     } else {
       ESP_LOGI(LOG_TAG, "App unsubscribed");
-      currentPalette = ForestColors_p;
-      brightness = 10;
     }
   }
 };
@@ -159,7 +159,6 @@ void connectToEUC() {
     return;
   }
   doInit = true;
-  currentPalette = ForestColors_p;
 }
 
 void initEUC() {
@@ -196,6 +195,9 @@ void setup() {
   esp_log_level_set("NimBLECharacteristicCallbacks", ESP_LOG_WARN);
   // esp_log_level_set("wifi", ESP_LOG_WARN);
   esp_log_level_set(LOG_TAG, ESP_LOG_INFO);
+
+  LittleFS.begin();
+  FDstat_t stat = settingsData.read();
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -236,14 +238,8 @@ void setup() {
 
 #include <effects.h>
 
-void FillLEDsFromPaletteColors(uint8_t colorIndex) {
-  for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = ColorFromPalette(currentPalette, colorIndex, brightness, currentBlending);
-    colorIndex += 3;
-  }
-}
-
 void loop() {
+  settingsData.tick();
   btn.tick();
 
   if (doScanEUC == true) {
@@ -253,60 +249,94 @@ void loop() {
   } else if (doInit == true) {
     initEUC();
   } else if (doWork == false) {
+    //
   } else if (doWork == true) {
     if (tmrDbg.tick()) {
       EUC.debug();
     }
   }
 
-  if (btn.click(3)) {
-    palleteButtonIndex++;
-    if (palleteButtonIndex >= 8) {
-      palleteButtonIndex = 0;
+  if (btn.click(2)) {
+    mysettings.modeButtonIndex++;
+    if (mysettings.modeButtonIndex > 1) {
+      mysettings.modeButtonIndex = 0;
     }
-    ESP_LOGI(LOG_TAG, "Changed palette to %d", palleteButtonIndex);
-  } else if (btn.click(2)) {
-    modeButtonIndex++;
-    if (modeButtonIndex >= 2) { modeButtonIndex = 0; }
-    ESP_LOGI(LOG_TAG, "Changed mode to %d", modeButtonIndex);
+    ESP_LOGI(LOG_TAG, "Changed mode to %d", mysettings.modeButtonIndex);
+    settingsData.update();
+  } else if (btn.click(1)) {
+    mysettings.palleteButtonIndex++;
+    if (mysettings.palleteButtonIndex > 7) {
+      mysettings.palleteButtonIndex = 0;
+    }
+    ESP_LOGI(LOG_TAG, "Changed palette to %d", mysettings.palleteButtonIndex);
+    settingsData.update();
   }
 
-  switch (palleteButtonIndex) {
-    case 0: currentPalette = CloudColors_p; break;
-    case 1: currentPalette = LavaColors_p; break;
-    case 2: currentPalette = OceanColors_p; break;
-    case 3: currentPalette = ForestColors_p; break;
-    case 4: currentPalette = RainbowColors_p; break;
-    case 5: currentPalette = RainbowStripeColors_p; break;
-    case 6: currentPalette = PartyColors_p; break;
-    case 7: currentPalette = HeatColors_p; break;
+  switch (mysettings.palleteButtonIndex) {
+    case 0:
+      currentPalette = CloudColors_p;
+      break;
+    case 1:
+      currentPalette = LavaColors_p;
+      break;
+    case 2:
+      currentPalette = OceanColors_p;
+      break;
+    case 3:
+      currentPalette = ForestColors_p;
+      break;
+    case 4:
+      fill_solid(currentPalette, 16, CRGB::Black);
+      currentPalette[0] = CRGB::White;
+      currentPalette[4] = CRGB::White;
+      currentPalette[8] = CRGB::White;
+      currentPalette[12] = CRGB::White;
+      break;
+    case 5:
+      fill_solid(currentPalette, 16, CRGB::Black);
+      CRGB purple = CHSV(HUE_PURPLE, 255, 255);
+      CRGB green = CHSV(HUE_GREEN, 255, 255);
+      CRGB black = CRGB::Black;
+
+      currentPalette = CRGBPalette16(green, green, black, black, purple, purple, black, black, green, green, black, black, purple, purple, black, black);
+      break;
+    case 6:
+      currentPalette = PartyColors_p;
+      break;
+    case 7:
+      currentPalette = HeatColors_p;
+      break;
+    case 8:
+      currentPalette = RainbowColors_p;
+      break;
+    case 9:
+      currentPalette = RainbowStripeColors_p;
+      break;
   }
 
-  if (btn.step()) {
-    if (btn.stepFor(2000)) {
-      brightness += 5;
-    } else {
-      brightness += 1;
-    }
-    if (brightness >= 255) {
-      brightness = 1;
-    }
-    ESP_LOGI(LOG_TAG, "Changed brightness to %d", brightness);
+  if (EUC.lampState) {
+    brightness = 255;
+  } else if (EUC.decorativeLightState) {
+    brightness = 10;
+  } else {
+    brightness = 0;
   }
 
-  if (tmrFL.tick()) {
+  if (tmrLed.tick()) {
     startIndex = startIndex + 1;
-    if (EUC.speed > 0) {
-      fill_solid(leds, NUM_LEDS, CRGB::Black);
-      fill_solid(leds, map(EUC.speed, 0, 4000, 0, NUM_LEDS), CRGB::Red);
-    } else if (EUC.speed > 0) {
-      fill_solid(leds, NUM_LEDS, CRGB::Black);
-      fill_solid(leds, map(EUC.speed * -1, 0, -4000, 0, NUM_LEDS), CRGB::Red);
-    } else if (modeButtonIndex == 0) {
-      FillLEDsFromPaletteColors(startIndex);
-    } else if (modeButtonIndex == 1) {
+    // Если движемся
+    if (EUC.speed != 0) {
+      fadeToBlackBy(leds, NUM_LEDS, 20);
+      fill_solid(leds, maxLeds, CRGB(255, 0, 0));
+    } else if (EUC.speed != 0) {
+      fadeToBlackBy(leds, NUM_LEDS, 20);
+      maxLeds = map(abs(EUC.speed), 0, 4000, 0, NUM_LEDS);
+      FillLEDsFromPaletteColors(startIndex, maxLeds);
+    } else if (mysettings.modeButtonIndex == 0) {
+      FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
+    } else if (mysettings.modeButtonIndex == 1) {
       juggle();
     }
-    FastLED.show();
   }
+  FastLED.show();
 }
