@@ -155,13 +155,13 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           break;
 
         default:
-          ESP_LOGW(LOG_TAG, "[WARN] Unknown command: 0x%02hX\n", command);
+          // ESP_LOGW(LOG_TAG, "[WARN] Unknown command: 0x%02hX", command);
           break;
       }
       break;
     }
     default:
-      ESP_LOGW(LOG_TAG, "[WARN] Unknown flag: 0x%02hX\n", flag);
+      // ESP_LOGW(LOG_TAG, "[WARN] Unknown flag: 0x%02hX", flag);
       break;
   }
 }

@@ -14,64 +14,58 @@
 #include <TimerMs.h>
 #include <esp_log.h>
 
+static const char* LOG_TAG = "ESP32-EUC";
 const int LED_PIN = 2;
 #define DATA_PIN 13
-#define LED_TYPE WS2812B
 #define NUM_LEDS 17
+
 CRGB leds[NUM_LEDS];
+CRGBPalette16 currentPalette = OceanColors_p;
+TBlendType currentBlending = LINEARBLEND;
+uint8_t brightness = 30;
+uint8_t startIndex = 0;
+uint8_t maxLeds = NUM_LEDS;
 
-struct Settings {
-  uint8_t brightnessButtonIndex = 0;
-  uint8_t palleteButtonIndex = 0;
-  uint8_t modeButtonIndex = 0;
-};
-Settings mysettings;
-FileData settingsData(&LittleFS, "/settings.dat", 'B', &mysettings, sizeof(mysettings));
-
-static const char* LOG_TAG = "ESP32-EUC";
-
-TimerMs tmrLed(10, 1, false);
-TimerMs tmrDbg(1000, 1, false);
+TimerMs timerFastLed(10, 1, false);
+TimerMs timerShowEucDebugLog(1000, 1, false);
 Button btn(0);
 
-// Список сервисов и характеристик
+// Работа с EUC
+static InmotionV2Unpacker* unpacker = new InmotionV2Unpacker();
+static InmotionV2Message* pMessage = new InmotionV2Message();
+static NimBLEClient* eucBleClient;
+static NimBLEServer* appBleServer;
 static const NimBLEUUID uartServiceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
 static const NimBLEUUID txCharUUID("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
 static const NimBLEUUID rxCharUUID("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
-static const NimBLEUUID unknownService1UUID("FFE5");
-static const NimBLEUUID unknownService1CharUUID("FFE9");
-static const NimBLEUUID unknownService2UUID("FFE0");
-static const NimBLEUUID unknownService2CharUUID("FFE4");
-
-static NimBLEClient* eucBleClient;
-static NimBLEServer* appBleServer;
-
-static NimBLERemoteService* pRemoteService;
-static NimBLERemoteCharacteristic* rxCharacteristic;
-static NimBLERemoteCharacteristic* txCharacteristic;
-
+static const NimBLEUUID ffe5ServiceUUID("FFE5");
+static const NimBLEUUID ffe9CharUUID("FFE9");
+static const NimBLEUUID ffe0ServiceCharUUID("FFE0");
+static const NimBLEUUID ffe4CharUUID("FFE4");
+static NimBLERemoteService* eucService;
+static NimBLERemoteCharacteristic* eucRxCharacteristic;
+static NimBLERemoteCharacteristic* eucTxCharacteristic;
 static NimBLEService* appService;
-static NimBLEService* ffe5;
-static NimBLEService* ffe0;
-static NimBLECharacteristic* sTxCharacteristic;
-static NimBLECharacteristic* sRxCharacteristic;
-static NimBLECharacteristic* ffe9Characteristic;
-static NimBLECharacteristic* ffe4Characteristic;
-static NimBLEAdvertising* sAdvertising;
-
-static InmotionV2Unpacker* unpacker = new InmotionV2Unpacker();
-static InmotionV2Message* pMessage = new InmotionV2Message();
+static NimBLEService* appFfe5;
+static NimBLEService* appFfe0;
+static NimBLECharacteristic* appTxCharacteristic;
+static NimBLECharacteristic* appRxCharacteristic;
+static NimBLECharacteristic* appFfe9Characteristic;
+static NimBLECharacteristic* appFfe4Characteristic;
+static NimBLEAdvertising* appAdvertising;
 
 static boolean doScanEUC = false;
 static boolean doConnectToEUC = false;
 static boolean doInit = false;
 static boolean doWork = false;
 
-CRGBPalette16 currentPalette = OceanColors_p;
-TBlendType currentBlending = LINEARBLEND;
-uint8_t brightness = 30;
-uint8_t startIndex = 0;
-uint8_t maxLeds = NUM_LEDS;
+struct SettingsStruct {
+  uint8_t brightnessButtonIndex = 0;
+  uint8_t paletteButtonIndex = 0;
+  uint8_t modeButtonIndex = 0;
+};
+SettingsStruct espSettings;
+FileData settingsData(&LittleFS, "/settings.dat", 'B', &espSettings, sizeof(espSettings));
 
 /** @brief Received message from app, proxy it to euc */
 static void appNotifyReceived(NimBLECharacteristic* pCharacteristic) {
@@ -80,6 +74,7 @@ static void appNotifyReceived(NimBLECharacteristic* pCharacteristic) {
     return;
   }
 
+  // Write message from app to euc
   eucBleClient->getService(uartServiceUUID)->getCharacteristic(pCharacteristic->getUUID())->writeValue(pCharacteristic->getValue().data(), pCharacteristic->getDataLength(), false);
 }
 
@@ -102,9 +97,8 @@ static void eucNotifyReceived(NimBLERemoteCharacteristic* eucCharacteristic, uin
     return;
   }
 
-  NimBLEService* service = appBleServer->getServiceByUUID(eucCharacteristic->getRemoteService()->getUUID());
-  NimBLECharacteristic* characteristic = service->getCharacteristic(eucCharacteristic->getUUID());
-  characteristic->notify(data, dataLength, true);
+  // Send notification from euc to app
+  appBleServer->getServiceByUUID(eucCharacteristic->getRemoteService()->getUUID())->getCharacteristic(eucCharacteristic->getUUID())->notify(data, dataLength, true);
   digitalWrite(LED_PIN, LOW);
 }
 
@@ -165,16 +159,16 @@ void initEUC() {
   ESP_LOGD("ESP32-BLE", "Initializing client services...");
   doInit = false;
 
-  NimBLERemoteService* pRemoteService = eucBleClient->getService(uartServiceUUID);
-  txCharacteristic = pRemoteService->getCharacteristic(txCharUUID);
-  rxCharacteristic = pRemoteService->getCharacteristic(rxCharUUID);
-  rxCharacteristic->subscribe(true, eucNotifyReceived, false);
+  NimBLERemoteService* eucService = eucBleClient->getService(uartServiceUUID);
+  eucTxCharacteristic = eucService->getCharacteristic(txCharUUID);
+  eucRxCharacteristic = eucService->getCharacteristic(rxCharUUID);
+  eucRxCharacteristic->subscribe(true, eucNotifyReceived, false);
 
-  sTxCharacteristic->setCallbacks(new ProxyCallbacks());
-  sRxCharacteristic->setCallbacks(new ProxyCallbacks());
-  ffe9Characteristic->setCallbacks(new ProxyCallbacks());
-  ffe4Characteristic->setCallbacks(new ProxyCallbacks());
-  sAdvertising->start();
+  appTxCharacteristic->setCallbacks(new ProxyCallbacks());
+  appRxCharacteristic->setCallbacks(new ProxyCallbacks());
+  appFfe9Characteristic->setCallbacks(new ProxyCallbacks());
+  appFfe4Characteristic->setCallbacks(new ProxyCallbacks());
+  appAdvertising->start();
 
   ESP_LOGI("ESP32-BLE", "EUC initialized!");
 }
@@ -201,7 +195,7 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
 
-  FastLED.addLeds<LED_TYPE, DATA_PIN, GRB>(leds, NUM_LEDS);
+  FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
   FastLED.setCorrection(TypicalLEDStrip);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 100);
   // FastLED.setBrightness(10);
@@ -217,19 +211,19 @@ void setup() {
   appBleServer = NimBLEDevice::createServer();
 
   appService = appBleServer->createService(uartServiceUUID);
-  ffe5 = appBleServer->createService(unknownService1UUID);
-  ffe0 = appBleServer->createService(unknownService2UUID);
+  appFfe5 = appBleServer->createService(ffe5ServiceUUID);
+  appFfe0 = appBleServer->createService(ffe0ServiceCharUUID);
 
-  sTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  sRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
-  ffe9Characteristic = ffe5->createCharacteristic(unknownService1CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  ffe4Characteristic = ffe0->createCharacteristic(unknownService2CharUUID, NIMBLE_PROPERTY::NOTIFY);
+  appTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  appRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
+  appFfe9Characteristic = appFfe5->createCharacteristic(ffe9CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  appFfe4Characteristic = appFfe0->createCharacteristic(ffe4CharUUID, NIMBLE_PROPERTY::NOTIFY);
 
   appService->start();
-  sAdvertising = NimBLEDevice::getAdvertising();
-  sAdvertising->addServiceUUID(uartServiceUUID);
-  sAdvertising->start();
-  sAdvertising->stop();
+  appAdvertising = NimBLEDevice::getAdvertising();
+  appAdvertising->addServiceUUID(uartServiceUUID);
+  appAdvertising->start();
+  appAdvertising->stop();
   // /Прокси
 
   // Запланировали сканирование
@@ -249,30 +243,30 @@ void loop() {
   } else if (doInit == true) {
     initEUC();
   } else if (doWork == false) {
-    //
+    // Do nothing
   } else if (doWork == true) {
-    if (tmrDbg.tick()) {
-      EUC.debug();
+    if (timerShowEucDebugLog.tick()) {
+      // EUC.debug();
     }
   }
 
   if (btn.click(2)) {
-    mysettings.modeButtonIndex++;
-    if (mysettings.modeButtonIndex > 1) {
-      mysettings.modeButtonIndex = 0;
+    espSettings.modeButtonIndex++;
+    if (espSettings.modeButtonIndex > 1) {
+      espSettings.modeButtonIndex = 0;
     }
-    ESP_LOGI(LOG_TAG, "Changed mode to %d", mysettings.modeButtonIndex);
+    ESP_LOGI(LOG_TAG, "Changed mode to %d", espSettings.modeButtonIndex);
     settingsData.update();
   } else if (btn.click(1)) {
-    mysettings.palleteButtonIndex++;
-    if (mysettings.palleteButtonIndex > 7) {
-      mysettings.palleteButtonIndex = 0;
+    espSettings.paletteButtonIndex++;
+    if (espSettings.paletteButtonIndex > 8) {
+      espSettings.paletteButtonIndex = 0;
     }
-    ESP_LOGI(LOG_TAG, "Changed palette to %d", mysettings.palleteButtonIndex);
+    ESP_LOGI(LOG_TAG, "Changed palette to %d", espSettings.paletteButtonIndex);
     settingsData.update();
   }
 
-  switch (mysettings.palleteButtonIndex) {
+  switch (espSettings.paletteButtonIndex) {
     case 0:
       currentPalette = CloudColors_p;
       break;
@@ -294,11 +288,17 @@ void loop() {
       break;
     case 5:
       fill_solid(currentPalette, 16, CRGB::Black);
-      CRGB purple = CHSV(HUE_PURPLE, 255, 255);
-      CRGB green = CHSV(HUE_GREEN, 255, 255);
-      CRGB black = CRGB::Black;
+      currentPalette[0] = CRGB::Green;
+      currentPalette[1] = CRGB::Green;
 
-      currentPalette = CRGBPalette16(green, green, black, black, purple, purple, black, black, green, green, black, black, purple, purple, black, black);
+      currentPalette[4] = CRGB::Purple;
+      currentPalette[5] = CRGB::Purple;
+
+      currentPalette[8] = CRGB::Green;
+      currentPalette[9] = CRGB::Green;
+
+      currentPalette[12] = CRGB::Purple;
+      currentPalette[13] = CRGB::Purple;
       break;
     case 6:
       currentPalette = PartyColors_p;
@@ -307,24 +307,25 @@ void loop() {
       currentPalette = HeatColors_p;
       break;
     case 8:
-      currentPalette = RainbowColors_p;
-      break;
-    case 9:
-      currentPalette = RainbowStripeColors_p;
+      fill_solid(currentPalette, 16, CRGB::Red);
+      // currentPalette[0] = CRGB::Red;
+      // currentPalette[1] = CRGB::Red;
+
+      currentPalette[4] = CRGB::Blue;
+      currentPalette[5] = CRGB::Blue;
+
+      // currentPalette[8] = CRGB::Red;
+      // currentPalette[9] = CRGB::Red;
+
+      currentPalette[12] = CRGB::Blue;
+      currentPalette[13] = CRGB::Blue;
       break;
   }
 
-  if (EUC.lampState) {
-    brightness = 255;
-  } else if (EUC.decorativeLightState) {
-    brightness = 10;
-  } else {
-    brightness = 0;
-  }
+  brightness = EUC.lampState ? 100 : (EUC.decorativeLightState ? 50 : 1);
 
-  if (tmrLed.tick()) {
+  if (timerFastLed.tick()) {
     startIndex = startIndex + 1;
-    // Если движемся
     if (EUC.speed != 0) {
       fadeToBlackBy(leds, NUM_LEDS, 20);
       fill_solid(leds, maxLeds, CRGB(255, 0, 0));
@@ -332,9 +333,9 @@ void loop() {
       fadeToBlackBy(leds, NUM_LEDS, 20);
       maxLeds = map(abs(EUC.speed), 0, 4000, 0, NUM_LEDS);
       FillLEDsFromPaletteColors(startIndex, maxLeds);
-    } else if (mysettings.modeButtonIndex == 0) {
+    } else if (espSettings.modeButtonIndex == 0) {
       FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
-    } else if (mysettings.modeButtonIndex == 1) {
+    } else if (espSettings.modeButtonIndex == 1) {
       juggle();
     }
   }
