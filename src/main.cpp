@@ -2,7 +2,6 @@
 #define CONFIG_NIMBLE_CPP_LOG_LEVEL 3
 
 #include <Arduino.h>
-#include <EEPROM.h>
 #include <EUC.h>
 #include <EncButton.h>
 #include <FastLED.h>
@@ -33,31 +32,6 @@ Button btn(0);
 // Работа с EUC
 static InmotionV2Unpacker* unpacker = new InmotionV2Unpacker();
 static InmotionV2Message* pMessage = new InmotionV2Message();
-static NimBLEClient* eucBleClient;
-static NimBLEServer* appBleServer;
-static const NimBLEUUID uartServiceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-static const NimBLEUUID txCharUUID("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
-static const NimBLEUUID rxCharUUID("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
-static const NimBLEUUID ffe5ServiceUUID("FFE5");
-static const NimBLEUUID ffe9CharUUID("FFE9");
-static const NimBLEUUID ffe0ServiceCharUUID("FFE0");
-static const NimBLEUUID ffe4CharUUID("FFE4");
-static NimBLERemoteService* eucService;
-static NimBLERemoteCharacteristic* eucRxCharacteristic;
-static NimBLERemoteCharacteristic* eucTxCharacteristic;
-static NimBLEService* appService;
-static NimBLEService* appFfe5;
-static NimBLEService* appFfe0;
-static NimBLECharacteristic* appTxCharacteristic;
-static NimBLECharacteristic* appRxCharacteristic;
-static NimBLECharacteristic* appFfe9Characteristic;
-static NimBLECharacteristic* appFfe4Characteristic;
-static NimBLEAdvertising* appAdvertising;
-
-static boolean doScanEUC = false;
-static boolean doConnectToEUC = false;
-static boolean doInit = false;
-static boolean doWork = false;
 
 struct SettingsStruct {
   uint8_t brightnessButtonIndex = 0;
@@ -67,119 +41,9 @@ struct SettingsStruct {
 SettingsStruct espSettings;
 FileData settingsData(&LittleFS, "/settings.dat", 'B', &espSettings, sizeof(espSettings));
 
-/** @brief Received message from app, proxy it to euc */
-static void appNotifyReceived(NimBLECharacteristic* pCharacteristic) {
-  if (eucBleClient->isConnected() == false || doWork == false) {
-    ESP_LOGW(LOG_TAG, "EUC is not connected, message will be dropped");
-    return;
-  }
-
-  // Write message from app to euc
-  eucBleClient->getService(uartServiceUUID)->getCharacteristic(pCharacteristic->getUUID())->writeValue(pCharacteristic->getValue().data(), pCharacteristic->getDataLength(), false);
-}
-
-/** @brief Received message from euc, proxy it to app and parse to EUC object */
-static void eucNotifyReceived(NimBLERemoteCharacteristic* eucCharacteristic, uint8_t* data, size_t dataLength, bool isNotify) {
-  digitalWrite(LED_PIN, HIGH);
-
-  for (size_t i = 0; i < dataLength; i++) {
-    if (unpacker->addChar(data[i]) == true) {
-      uint8_t* buffer = unpacker->getBuffer();
-      size_t bufferLength = unpacker->getBufferIndex();
-
-      pMessage->parse(buffer, bufferLength);
-    }
-  }
-
-  if (doWork == false) {
-    ESP_LOGW(LOG_TAG, "Couldn't proxy message to app, because app was not connected");
-    digitalWrite(LED_PIN, LOW);
-    return;
-  }
-
-  // Send notification from euc to app
-  appBleServer->getServiceByUUID(eucCharacteristic->getRemoteService()->getUUID())->getCharacteristic(eucCharacteristic->getUUID())->notify(data, dataLength, true);
-  digitalWrite(LED_PIN, LOW);
-}
-
-class EUCFoundDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
-  void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-    // Skip if it's not the service we're looking for
-    if (advertisedDevice->getName() == "" || !advertisedDevice->isAdvertisingService(uartServiceUUID))
-      return;
-
-    // We have found a device, but it's not yet connected
-    NimBLEDevice::getScan()->stop();
-
-    EUC.bleDevice = advertisedDevice;
-    ESP_LOGI(LOG_TAG, "Found %s", EUC.bleDevice->getAddress().toString().c_str());
-    doConnectToEUC = true;
-  }
-};
-
-/** @brief Проксирование сообщений от приложения к колесу */
-class ProxyCallbacks : public NimBLECharacteristicCallbacks {
-  void onWrite(NimBLECharacteristic* pCharacteristic) { appNotifyReceived(pCharacteristic); }
-
-  void onSubscribe(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc, uint16_t subValue) {
-    doWork = subValue > 0;
-    if (doWork) {
-      ESP_LOGI(LOG_TAG, "App subscribed");
-    } else {
-      ESP_LOGI(LOG_TAG, "App unsubscribed");
-    }
-  }
-};
-
-void scanEUC() {
-  doScanEUC = false;
-  NimBLEScan* pScan = NimBLEDevice::getScan();
-  pScan->setAdvertisedDeviceCallbacks(new EUCFoundDeviceCallbacks(), false);
-  pScan->setInterval(100);
-  pScan->setWindow(99);
-  pScan->setActiveScan(true);
-  pScan->start(15);
-}
-
-void connectToEUC() {
-  ESP_LOGI("ESP32-BLE", "Connecting to... %s", EUC.bleDevice->getName().c_str());
-  doConnectToEUC = false;
-  if (eucBleClient->isConnected()) {
-    eucBleClient->disconnect();
-  }
-  bool connected = eucBleClient->connect(EUC.bleDevice, true);
-  if (!connected) {
-    doConnectToEUC = true;
-    return;
-  }
-  doInit = true;
-}
-
-void initEUC() {
-  ESP_LOGD("ESP32-BLE", "Initializing client services...");
-  doInit = false;
-
-  NimBLERemoteService* eucService = eucBleClient->getService(uartServiceUUID);
-  eucTxCharacteristic = eucService->getCharacteristic(txCharUUID);
-  eucRxCharacteristic = eucService->getCharacteristic(rxCharUUID);
-  eucRxCharacteristic->subscribe(true, eucNotifyReceived, false);
-
-  appTxCharacteristic->setCallbacks(new ProxyCallbacks());
-  appRxCharacteristic->setCallbacks(new ProxyCallbacks());
-  appFfe9Characteristic->setCallbacks(new ProxyCallbacks());
-  appFfe4Characteristic->setCallbacks(new ProxyCallbacks());
-  appAdvertising->start();
-
-  ESP_LOGI("ESP32-BLE", "EUC initialized!");
-}
-
-//////////////////////////////////
-//////////////////////////////////
-//////////////////////////////////
-
 void setup() {
   esp_log_level_set("*", ESP_LOG_VERBOSE);
-  esp_log_level_set("NimappBleServer", ESP_LOG_WARN);
+  esp_log_level_set("NimBLEServer", ESP_LOG_WARN);
   esp_log_level_set("NimBLEAdvertising", ESP_LOG_WARN);
   esp_log_level_set("NimBLEScan", ESP_LOG_WARN);
   esp_log_level_set("NimBLEClient", ESP_LOG_WARN);
@@ -187,7 +51,6 @@ void setup() {
   esp_log_level_set("NimBLEDevice", ESP_LOG_WARN);
   esp_log_level_set("NimBLECharacteristic", ESP_LOG_WARN);
   esp_log_level_set("NimBLECharacteristicCallbacks", ESP_LOG_WARN);
-  // esp_log_level_set("wifi", ESP_LOG_WARN);
   esp_log_level_set(LOG_TAG, ESP_LOG_INFO);
 
   LittleFS.begin();
@@ -202,32 +65,9 @@ void setup() {
 
   fill_solid(leds, NUM_LEDS, CRGB::Black);
   FastLED.show();
-
-  // Serial.begin(115200);
   ESP_LOGI(LOG_TAG, "Starting ESP32-EUC application...");
 
   NimBLEDevice::init("V11-ESP32EUC");
-  eucBleClient = NimBLEDevice::createClient();
-  appBleServer = NimBLEDevice::createServer();
-
-  appService = appBleServer->createService(uartServiceUUID);
-  appFfe5 = appBleServer->createService(ffe5ServiceUUID);
-  appFfe0 = appBleServer->createService(ffe0ServiceCharUUID);
-
-  appTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  appRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
-  appFfe9Characteristic = appFfe5->createCharacteristic(ffe9CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  appFfe4Characteristic = appFfe0->createCharacteristic(ffe4CharUUID, NIMBLE_PROPERTY::NOTIFY);
-
-  appService->start();
-  appAdvertising = NimBLEDevice::getAdvertising();
-  appAdvertising->addServiceUUID(uartServiceUUID);
-  appAdvertising->start();
-  appAdvertising->stop();
-  // /Прокси
-
-  // Запланировали сканирование
-  doScanEUC = true;
 }
 
 #include <effects.h>
@@ -236,19 +76,7 @@ void loop() {
   settingsData.tick();
   btn.tick();
 
-  if (doScanEUC == true) {
-    scanEUC();
-  } else if (doConnectToEUC == true) {
-    connectToEUC();
-  } else if (doInit == true) {
-    initEUC();
-  } else if (doWork == false) {
-    // Do nothing
-  } else if (doWork == true) {
-    if (timerShowEucDebugLog.tick()) {
-      // EUC.debug();
-    }
-  }
+  EUC.bleConnect();
 
   if (btn.click(2)) {
     espSettings.modeButtonIndex++;

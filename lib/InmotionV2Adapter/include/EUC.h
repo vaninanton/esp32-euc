@@ -5,8 +5,15 @@
 class eucClass {
  public:
   void debug();
+  void bleConnect();
 
-  NimBLEAdvertisedDevice* bleDevice;
+  NimBLEAdvertisedDevice* advertisedDevice = nullptr;
+  NimBLEClient* eucClient = nullptr;
+  NimBLEServer* appServer = nullptr;
+
+  bool eucSubscribed = false;
+  bool appSubscribed = false;
+
   int16_t busVoltage;
   int16_t busCurrent;
   int16_t speed;
