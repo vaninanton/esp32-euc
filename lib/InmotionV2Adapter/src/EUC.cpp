@@ -77,10 +77,12 @@ void eucClass::startBleScan() {
   if (EUC.latestScan > 0 && millis() - EUC.latestScan < 10000)
     return;
 
+  LED.scanStart();
   ESP_LOGD(LOG_TAG, "Scanning for BLE device...");
   NimBLEScan* pScan = NimBLEDevice::getScan();
   pScan->setAdvertisedDeviceCallbacks(new EUCFoundDeviceCallbacks(), false);
   pScan->start(3);
+  LED.scanStop();
   ESP_LOGD(LOG_TAG, "Stop scanning for BLE device...");
   EUC.latestScan = millis();
   EUC.failedScanCount++;

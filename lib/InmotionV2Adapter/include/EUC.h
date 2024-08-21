@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <InmotionV2Message.h>
 #include <InmotionV2Unpacker.h>
+#include <LED.h>
 #include <NimBLEDevice.h>
 
 static const NimBLEUUID uartServiceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
