@@ -1,121 +1,179 @@
 #include "EUC.h"
 
 static const char* LOG_TAG = "EUC";
-
-static const NimBLEUUID uartServiceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
-static const NimBLEUUID txCharUUID("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
-static const NimBLEUUID rxCharUUID("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
-static const NimBLEUUID ffe5ServiceUUID("FFE5");
-static const NimBLEUUID ffe9CharUUID("FFE9");
-static const NimBLEUUID ffe0ServiceCharUUID("FFE0");
-static const NimBLEUUID ffe4CharUUID("FFE4");
+static InmotionV2Unpacker* unpacker = new InmotionV2Unpacker();
+static InmotionV2Message* pMessage = new InmotionV2Message();
 
 class EUCFoundDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks {
-  void onResult(NimBLEAdvertisedDevice* advertisedDevice) {
-    if (advertisedDevice->getName() == "") {
-      return;
-    }
+  void onResult(NimBLEAdvertisedDevice* advertisedDevice) { EUC.onScanResult(advertisedDevice); }
+};
 
-    if (advertisedDevice->getName() == "V11-9C07003B") {
-      NimBLEDevice::getScan()->stop();
-      ESP_LOGI(LOG_TAG, "[SCAN] Known BLE device: %s", advertisedDevice->getName().c_str());
-      EUC.advertisedDevice = advertisedDevice;
-      return;
-    }
+static void eucNotifyReceived(NimBLERemoteCharacteristic* pChar, uint8_t* data, size_t length, bool isNotify) {
+  EUC.onEucNotifyReceived(pChar, data, length, isNotify);
+};
 
-    ESP_LOGD(LOG_TAG, "[SCAN] Found BLE device: %s", advertisedDevice->getName().c_str());
+class EucConnectCallbacks : public NimBLEClientCallbacks {
+  void onConnect(NimBLEClient* pClient) { EUC.onEucConnected(pClient); }
+  void onDisconnect(NimBLEClient* pClient) { EUC.onEucDisconnected(pClient); }
+};
+
+class AppConnectCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) { EUC.onAppConnected(pServer, desc); }
+  void onDisconnect(NimBLEServer* pServer) { EUC.onAppDisconnected(pServer); }
+};
+
+class AppCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* pChar) { EUC.onAppWrite(pChar); }
+
+  void onSubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc, uint16_t subValue) {
+    (subValue > 0) ? EUC.onAppSubscribe(pChar, desc) : EUC.onAppUnsubscribe(pChar, desc);
   }
 };
 
-static void eucNotifyReceived(NimBLERemoteCharacteristic* eucCharacteristic, uint8_t* data, size_t dataLength, bool isNotify) {
-  ESP_LOGD(LOG_TAG, "Notify received from EUC");
-  EUC.appServer->getServiceByUUID(uartServiceUUID)->getCharacteristic(eucCharacteristic->getUUID())->notify(data, dataLength, true);
-};
+/////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
+/////////////////////////////////////////////////////
 
-class EUCClientCallbacks : public NimBLEClientCallbacks {
- void onConnect(NimBLEClient* pClient) {
+void eucClass::createAppBleServer() {
+  if (EUC.appServer != nullptr)
+    return;
+
+  ESP_LOGD(LOG_TAG, "Creating BLE server...");
+  EUC.appServer = NimBLEDevice::createServer();
+  EUC.appServer->setCallbacks(new AppConnectCallbacks());
+
+  NimBLEService* appService = EUC.appServer->createService(uartServiceUUID);
+  NimBLEService* appFfe5 = EUC.appServer->createService(ffe5ServiceUUID);
+  NimBLEService* appFfe0 = EUC.appServer->createService(ffe0ServiceCharUUID);
+  NimBLECharacteristic* appTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  NimBLECharacteristic* appRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
+  NimBLECharacteristic* appFfe9Characteristic = appFfe5->createCharacteristic(ffe9CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  NimBLECharacteristic* appFfe4Characteristic = appFfe0->createCharacteristic(ffe4CharUUID, NIMBLE_PROPERTY::NOTIFY);
+  appService->start();
+
+  NimBLEAdvertising* appAdvertising = NimBLEDevice::getAdvertising();
+  appAdvertising->addServiceUUID(uartServiceUUID);
+  appTxCharacteristic->setCallbacks(new AppCallbacks());
+  appRxCharacteristic->setCallbacks(new AppCallbacks());
+  appFfe9Characteristic->setCallbacks(new AppCallbacks());
+  appFfe4Characteristic->setCallbacks(new AppCallbacks());
+  NimBLEDevice::startAdvertising();
+  NimBLEDevice::stopAdvertising();
+}
+void eucClass::createEucBleClient() {
+  if (EUC.eucClient != nullptr)
+    return;
+
+  ESP_LOGD(LOG_TAG, "Creating BLE client...");
+  EUC.eucClient = NimBLEDevice::createClient();
+  EUC.eucClient->setClientCallbacks(new EucConnectCallbacks(), true);
+}
+void eucClass::startBleScan() {
+  if (EUC.advertisedDevice != nullptr)
+    return;
+  if (EUC.failedScanCount > 5)
+    return;
+
+  if (EUC.latestScan > 0 && millis() - EUC.latestScan < 10000)
+    return;
+
+  ESP_LOGD(LOG_TAG, "Scanning for BLE device...");
+  NimBLEScan* pScan = NimBLEDevice::getScan();
+  pScan->setAdvertisedDeviceCallbacks(new EUCFoundDeviceCallbacks(), false);
+  pScan->start(3);
+  ESP_LOGD(LOG_TAG, "Stop scanning for BLE device...");
+  EUC.latestScan = millis();
+  EUC.failedScanCount++;
+}
+void eucClass::onScanResult(NimBLEAdvertisedDevice* advertisedDevice) {
+  if (advertisedDevice->getName() != "V11-9C07003B")
+    return;
+
+  ESP_LOGI(LOG_TAG, "[SCAN] Found BLE device: %s", advertisedDevice->getName().c_str());
+  NimBLEDevice::getScan()->stop();
+  EUC.advertisedDevice = advertisedDevice;
+}
+void eucClass::onEucConnected(NimBLEClient* pClient) {
   ESP_LOGD(LOG_TAG, "EUC connected");
- }
- void onDisconnect(NimBLEClient* pClient) {
+  EUC.failedScanCount = 0;
+}
+void eucClass::onEucDisconnected(NimBLEClient* pClient) {
   ESP_LOGD(LOG_TAG, "EUC disconnected");
- }
-};
+  EUC.advertisedDevice = nullptr;
+  EUC.eucSubscribed = false;
+  EUC.failedScanCount = 0;
+}
+void eucClass::connectToEuc() {
+  if (EUC.eucClient == nullptr)
+    return;
+  if (EUC.eucClient->isConnected())
+    return;
+  if (EUC.advertisedDevice == nullptr)
+    return;
 
-class ProxyConnectCallbacks : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) { ESP_LOGD(LOG_TAG, "App connected"); }
-  void onDisconnect(NimBLEServer* pServer) { ESP_LOGD(LOG_TAG, "App disconnected"); }
-};
+  ESP_LOGD(LOG_TAG, "Connecting to EUC...");
+  // Сбрасываем статус подписки на RX
+  EUC.eucSubscribed = false;
+  EUC.failedScanCount = 0;
+  EUC.eucClient->connect(EUC.advertisedDevice);
+}
+void eucClass::subscribeToEuc() {
+  if (!EUC.eucClient->isConnected())
+    return;
+  if (EUC.eucSubscribed)
+    return;
 
-/** @brief Проксирование сообщений от приложения к колесу */
-class ProxyCallbacks : public NimBLECharacteristicCallbacks {
-  void onWrite(NimBLECharacteristic* pCharacteristic) {
-    ESP_LOGD(LOG_TAG, "Notify received from app");
-    if (EUC.eucClient->isConnected() == true) {
-      // Write message from app to euc
-      bool sent = EUC.eucClient->getService(uartServiceUUID)->getCharacteristic(pCharacteristic->getUUID())->writeValue(pCharacteristic->getValue().data(), pCharacteristic->getDataLength(), false);
+  EUC.failedScanCount = 0;
+  ESP_LOGD(LOG_TAG, "Subscribing to EUC characteristics...");
+  NimBLERemoteService* eucService = EUC.eucClient->getService(uartServiceUUID);
+  NimBLERemoteCharacteristic* eucTxCharacteristic = eucService->getCharacteristic(txCharUUID);
+  NimBLERemoteCharacteristic* eucRxCharacteristic = eucService->getCharacteristic(rxCharUUID);
+  eucRxCharacteristic->subscribe(true, eucNotifyReceived, false);
+  ESP_LOGD(LOG_TAG, "Subscribed! Starting advertising...");
+  NimBLEDevice::startAdvertising();
+  EUC.eucSubscribed = true;
+}
+void eucClass::onEucNotifyReceived(NimBLERemoteCharacteristic* eucCharacteristic, uint8_t* data, size_t dataLength, bool isNotify) {
+  // ESP_LOGD(LOG_TAG, "Notify received from EUC");
+  for (size_t i = 0; i < dataLength; i++) {
+    if (unpacker->addChar(data[i]) == true) {
+      uint8_t* buffer = unpacker->getBuffer();
+      size_t bufferLength = unpacker->getBufferIndex();
+      pMessage->parse(buffer, bufferLength);
     }
   }
 
-  void onSubscribe(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc, uint16_t subValue) {
-    if (subValue > 0) {
-      EUC.appSubscribed = true;
-      ESP_LOGD(LOG_TAG, "App subscribed");
-    } else {
-      EUC.appSubscribed = false;
-      ESP_LOGD(LOG_TAG, "App unsubscribed");
-    }
+  // EUC.appServer->getServiceByUUID(eucCharacteristic->getRemoteService()->getUUID())->getCharacteristic(eucCharacteristic->getUUID())->notify(data, dataLength, true);
+  EUC.appServer->getServiceByUUID(uartServiceUUID)->getCharacteristic(eucCharacteristic->getUUID())->notify(data, dataLength, true);
+}
+void eucClass::onAppConnected(NimBLEServer* pServer, ble_gap_conn_desc* desc) {
+  ESP_LOGD(LOG_TAG, "App connected");
+}
+void eucClass::onAppDisconnected(NimBLEServer* pServer) {
+  ESP_LOGD(LOG_TAG, "App disconnected");
+}
+void eucClass::onAppSubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc) {
+  ESP_LOGD(LOG_TAG, "App subscribed");
+  EUC.appSubscribed = true;
+}
+void eucClass::onAppUnsubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc) {
+  ESP_LOGD(LOG_TAG, "App unsubscribed");
+  EUC.appSubscribed = false;
+}
+void eucClass::onAppWrite(NimBLECharacteristic* pChar) {
+  // ESP_LOGD(LOG_TAG, "Notify received from app");
+  if (EUC.eucClient->isConnected() == true) {
+    // Write message from app to euc
+    bool sent = EUC.eucClient->getService(uartServiceUUID)->getCharacteristic(pChar->getUUID())->writeValue(pChar->getValue().data(), pChar->getDataLength(), false);
   }
-};
+}
 
-void eucClass::bleConnect() {
-  if (EUC.appServer == nullptr) {
-    ESP_LOGD(LOG_TAG, "Creating BLE server...");
-    EUC.appServer = NimBLEDevice::createServer();
-    EUC.appServer->setCallbacks(new ProxyConnectCallbacks());
-
-    NimBLEService* appService = EUC.appServer->createService(uartServiceUUID);
-    NimBLEService* appFfe5 = EUC.appServer->createService(ffe5ServiceUUID);
-    NimBLEService* appFfe0 = EUC.appServer->createService(ffe0ServiceCharUUID);
-
-    NimBLECharacteristic* appTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-    NimBLECharacteristic* appRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
-    NimBLECharacteristic* appFfe9Characteristic = appFfe5->createCharacteristic(ffe9CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-    NimBLECharacteristic* appFfe4Characteristic = appFfe0->createCharacteristic(ffe4CharUUID, NIMBLE_PROPERTY::NOTIFY);
-    appService->start();
-    NimBLEAdvertising* appAdvertising = NimBLEDevice::getAdvertising();
-    appAdvertising->addServiceUUID(uartServiceUUID);
-    appTxCharacteristic->setCallbacks(new ProxyCallbacks());
-    appRxCharacteristic->setCallbacks(new ProxyCallbacks());
-    appFfe9Characteristic->setCallbacks(new ProxyCallbacks());
-    appFfe4Characteristic->setCallbacks(new ProxyCallbacks());
-    NimBLEDevice::startAdvertising();
-    NimBLEDevice::stopAdvertising();
-  } else if (EUC.advertisedDevice == nullptr) {
-    ESP_LOGD(LOG_TAG, "Scanning for BLE device...");
-    NimBLEScan* pScan = NimBLEDevice::getScan();
-    pScan->setAdvertisedDeviceCallbacks(new EUCFoundDeviceCallbacks(), false);
-    pScan->start(5);
-  } else if (EUC.eucClient == nullptr) {
-    ESP_LOGD(LOG_TAG, "Creating BLE client...");
-    EUC.eucClient = NimBLEDevice::createClient();
-    EUC.eucClient->setClientCallbacks(new EUCClientCallbacks(), true);
-  } else if (EUC.eucClient->isConnected() == false) {
-    // Сбрасываем статус подписки на RX
-    EUC.eucSubscribed = false;
-    ESP_LOGD(LOG_TAG, "Connecting to BLE server...");
-    EUC.eucClient->connect(EUC.advertisedDevice);
-  } else if (EUC.eucClient->isConnected() == true && EUC.eucSubscribed == false) {
-    ESP_LOGD(LOG_TAG, "Subscribing to RX characteristic...");
-    NimBLERemoteService* eucService = EUC.eucClient->getService(uartServiceUUID);
-    NimBLERemoteCharacteristic* eucTxCharacteristic = eucService->getCharacteristic(txCharUUID);
-    NimBLERemoteCharacteristic* eucRxCharacteristic = eucService->getCharacteristic(rxCharUUID);
-    eucRxCharacteristic->subscribe(true, eucNotifyReceived, false);
-    ESP_LOGD(LOG_TAG, "Subscribed! Starting advertising...");
-    NimBLEDevice::startAdvertising();
-    EUC.eucSubscribed = true;
-  } else if (EUC.eucSubscribed == true) {
-    // ESP_LOGD(LOG_TAG, ".");
-  }
+void eucClass::tick() {
+  createAppBleServer();
+  createEucBleClient();
+  startBleScan();
+  connectToEuc();
+  subscribeToEuc();
 }
 
 void eucClass::debug() {

@@ -6,8 +6,6 @@
 #include <EncButton.h>
 #include <FastLED.h>
 #include <FileData.h>
-#include <InmotionV2Message.h>
-#include <InmotionV2Unpacker.h>
 #include <LittleFS.h>
 #include <NimBLEDevice.h>
 #include <TimerMs.h>
@@ -29,17 +27,14 @@ TimerMs timerFastLed(10, 1, false);
 TimerMs timerShowEucDebugLog(1000, 1, false);
 Button btn(0);
 
-// Работа с EUC
-static InmotionV2Unpacker* unpacker = new InmotionV2Unpacker();
-static InmotionV2Message* pMessage = new InmotionV2Message();
-
 struct SettingsStruct {
-  uint8_t brightnessButtonIndex = 0;
-  uint8_t paletteButtonIndex = 0;
-  uint8_t modeButtonIndex = 0;
+  unsigned int paletteIndex = 1;
+  unsigned long paletteChangedTime = 0;
+
+  unsigned int modeIndex = 1;
+  unsigned long modeChangedTime = 0;
 };
 SettingsStruct espSettings;
-FileData settingsData(&LittleFS, "/settings.dat", 'B', &espSettings, sizeof(espSettings));
 
 void setup() {
   esp_log_level_set("*", ESP_LOG_VERBOSE);
@@ -53,9 +48,6 @@ void setup() {
   esp_log_level_set("NimBLECharacteristicCallbacks", ESP_LOG_WARN);
   esp_log_level_set(LOG_TAG, ESP_LOG_INFO);
 
-  LittleFS.begin();
-  FDstat_t stat = settingsData.read();
-
   pinMode(LED_PIN, OUTPUT);
 
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
@@ -64,6 +56,8 @@ void setup() {
   // FastLED.setBrightness(10);
 
   fill_solid(leds, NUM_LEDS, CRGB::Black);
+  leds[0] = CRGB::Red;
+  leds[NUM_LEDS - 1] = CRGB::Red;
   FastLED.show();
   ESP_LOGI(LOG_TAG, "Starting ESP32-EUC application...");
 
@@ -72,49 +66,91 @@ void setup() {
 
 #include <effects.h>
 
-void loop() {
-  settingsData.tick();
-  btn.tick();
-
-  EUC.bleConnect();
-
-  if (btn.click(2)) {
-    espSettings.modeButtonIndex++;
-    if (espSettings.modeButtonIndex > 1) {
-      espSettings.modeButtonIndex = 0;
+static void showLedFrame() {
+  startIndex = startIndex + 1;
+  if (espSettings.modeIndex == 1) {
+    if (EUC.lampState) {
+      brightness = 200;
+    } else if (EUC.decorativeLightState) {
+      brightness = 100;
+    } else {
+      brightness = 50;
     }
-    ESP_LOGI(LOG_TAG, "Changed mode to %d", espSettings.modeButtonIndex);
-    settingsData.update();
-  } else if (btn.click(1)) {
-    espSettings.paletteButtonIndex++;
-    if (espSettings.paletteButtonIndex > 8) {
-      espSettings.paletteButtonIndex = 0;
+    // Заполнение по скорости, иначе просто играем палитрой
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+    if (EUC.speed == 0) {
+      FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
+    } else if (EUC.speed != 0) {
+      if (EUC.brakeState) {
+        fill_solid(leds, NUM_LEDS, CRGB::Red);
+      } else {
+        maxLeds = map(abs(EUC.speed), 0, 5000, 0, NUM_LEDS);
+        FillLEDsFromPaletteColors(startIndex, maxLeds);
+      }
     }
-    ESP_LOGI(LOG_TAG, "Changed palette to %d", espSettings.paletteButtonIndex);
-    settingsData.update();
+  } else if (espSettings.modeIndex == 2) {
+    // Всегда играем палитрой
+    FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
+  } else if (espSettings.modeIndex == 3) {
+    // Ёлочная игрушка
+    juggle();
+  } else if (espSettings.modeIndex == 4) {
+    fadeToBlackBy(leds, NUM_LEDS, 20);
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
   }
 
-  switch (espSettings.paletteButtonIndex) {
-    case 0:
+  if (espSettings.modeChangedTime != 0 && millis() - espSettings.modeChangedTime <= 3000) {
+    fill_solid(leds, espSettings.modeIndex, CRGB::Red);
+  }
+
+  if (espSettings.paletteChangedTime != 0 && millis() - espSettings.paletteChangedTime <= 3000) {
+    fill_solid(leds, espSettings.paletteIndex, CRGB::Green);
+  }
+
+  FastLED.show();
+}
+
+void loop() {
+  btn.tick();
+  EUC.tick();
+
+  if (btn.hold()) {
+    espSettings.modeChangedTime = millis();
+    espSettings.modeIndex++;
+    if (espSettings.modeIndex > 4) {
+      espSettings.modeIndex = 1;
+    }
+    ESP_LOGI(LOG_TAG, "Changed mode to %d", espSettings.modeIndex);
+  } else if (btn.click(1)) {
+    espSettings.paletteChangedTime = millis();
+    espSettings.paletteIndex++;
+    if (espSettings.paletteIndex > 9) {
+      espSettings.paletteIndex = 1;
+    }
+    ESP_LOGI(LOG_TAG, "Changed palette to %d", espSettings.paletteIndex);
+  }
+
+  switch (espSettings.paletteIndex) {
+    case 1:
       currentPalette = CloudColors_p;
       break;
-    case 1:
+    case 2:
       currentPalette = LavaColors_p;
       break;
-    case 2:
+    case 3:
       currentPalette = OceanColors_p;
       break;
-    case 3:
+    case 4:
       currentPalette = ForestColors_p;
       break;
-    case 4:
+    case 5:
       fill_solid(currentPalette, 16, CRGB::Black);
       currentPalette[0] = CRGB::White;
       currentPalette[4] = CRGB::White;
       currentPalette[8] = CRGB::White;
       currentPalette[12] = CRGB::White;
       break;
-    case 5:
+    case 6:
       fill_solid(currentPalette, 16, CRGB::Black);
       currentPalette[0] = CRGB::Green;
       currentPalette[1] = CRGB::Green;
@@ -128,13 +164,13 @@ void loop() {
       currentPalette[12] = CRGB::Purple;
       currentPalette[13] = CRGB::Purple;
       break;
-    case 6:
+    case 7:
       currentPalette = PartyColors_p;
       break;
-    case 7:
+    case 8:
       currentPalette = HeatColors_p;
       break;
-    case 8:
+    case 9:
       fill_solid(currentPalette, 16, CRGB::Red);
       // currentPalette[0] = CRGB::Red;
       // currentPalette[1] = CRGB::Red;
@@ -150,22 +186,7 @@ void loop() {
       break;
   }
 
-  brightness = EUC.lampState ? 100 : (EUC.decorativeLightState ? 50 : 1);
-
   if (timerFastLed.tick()) {
-    startIndex = startIndex + 1;
-    if (EUC.speed != 0) {
-      fadeToBlackBy(leds, NUM_LEDS, 20);
-      fill_solid(leds, maxLeds, CRGB(255, 0, 0));
-    } else if (EUC.speed != 0) {
-      fadeToBlackBy(leds, NUM_LEDS, 20);
-      maxLeds = map(abs(EUC.speed), 0, 4000, 0, NUM_LEDS);
-      FillLEDsFromPaletteColors(startIndex, maxLeds);
-    } else if (espSettings.modeButtonIndex == 0) {
-      FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
-    } else if (espSettings.modeButtonIndex == 1) {
-      juggle();
-    }
+    showLedFrame();
   }
-  FastLED.show();
 }

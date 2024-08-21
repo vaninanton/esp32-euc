@@ -1,12 +1,39 @@
 #pragma once
 #include <Arduino.h>
+#include <InmotionV2Message.h>
+#include <InmotionV2Unpacker.h>
 #include <NimBLEDevice.h>
+
+static const NimBLEUUID uartServiceUUID("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+static const NimBLEUUID txCharUUID("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
+static const NimBLEUUID rxCharUUID("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+static const NimBLEUUID ffe5ServiceUUID("FFE5");
+static const NimBLEUUID ffe9CharUUID("FFE9");
+static const NimBLEUUID ffe0ServiceCharUUID("FFE0");
+static const NimBLEUUID ffe4CharUUID("FFE4");
 
 class eucClass {
  public:
   void debug();
-  void bleConnect();
 
+  void tick();
+  void createAppBleServer();
+  void createEucBleClient();
+  void startBleScan();
+  void onScanResult(NimBLEAdvertisedDevice* advertisedDevice);
+  void onEucConnected(NimBLEClient* pClient);
+  void onEucDisconnected(NimBLEClient* pClient);
+  void connectToEuc();
+  void subscribeToEuc();
+  static void onEucNotifyReceived(NimBLERemoteCharacteristic* pChar, uint8_t* data, size_t dataLength, bool isNotify);
+  void onAppConnected(NimBLEServer* pServer, ble_gap_conn_desc* desc);
+  void onAppDisconnected(NimBLEServer* pServer);
+  void onAppSubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc);
+  void onAppUnsubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc);
+  void onAppWrite(NimBLECharacteristic* pChar);
+
+  unsigned long failedScanCount = 0;
+  unsigned long latestScan = 0;
   NimBLEAdvertisedDevice* advertisedDevice = nullptr;
   NimBLEClient* eucClient = nullptr;
   NimBLEServer* appServer = nullptr;
