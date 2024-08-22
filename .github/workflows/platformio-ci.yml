@@ -19,4 +19,4 @@ jobs:
       - name: Build PlatformIO Project
         run: pio run
       - name: Build PlatformIO Project
-        run: ls -lah
+        run: ls -lah .pio/build
