@@ -1,6 +1,6 @@
 #include "EUC.h"
 
-static const char* LOG_TAG = "EUC";
+static const char* LOG_TAG = "ESP32-EUC";
 static InmotionV2Unpacker* unpacker = new InmotionV2Unpacker();
 static InmotionV2Message* pMessage = new InmotionV2Message();
 
@@ -33,6 +33,10 @@ class AppCallbacks : public NimBLECharacteristicCallbacks {
 /////////////////////////////////////////////////////
 /////////////////////////////////////////////////////
 /////////////////////////////////////////////////////
+
+void eucClass::setup() {
+  NimBLEDevice::init("V11-ESP32EUC");
+}
 
 void eucClass::createAppBleServer() {
   if (EUC.appServer != nullptr)

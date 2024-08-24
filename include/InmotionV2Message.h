@@ -1,6 +1,4 @@
-#ifndef InmotionV2Message_h
-#define InmotionV2Message_h
-
+#pragma once
 #include <Arduino.h>
 #include <EUC.h>
 
@@ -22,4 +20,3 @@ class InmotionV2Message {
   size_t dataLength;
 };
 
-#endif

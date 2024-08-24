@@ -1,6 +1,4 @@
-#ifndef InmotionV2Unpacker_h
-#define InmotionV2Unpacker_h
-
+#pragma once
 #include <Arduino.h>
 
 class InmotionV2Unpacker {
@@ -28,4 +26,3 @@ class InmotionV2Unpacker {
   UnpackerState state = UnpackerState::unknown;
 };
 
-#endif

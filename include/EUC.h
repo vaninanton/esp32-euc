@@ -15,6 +15,7 @@ static const NimBLEUUID ffe4CharUUID("FFE4");
 
 class eucClass {
  public:
+  void setup();
   void debug();
 
   void tick();

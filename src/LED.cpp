@@ -3,7 +3,7 @@
 #define DATA_PIN 13
 #define NUM_LEDS 17
 
-static const char* LOG_TAG = "LED";
+static const char* LOG_TAG = "ESP32-EUC";
 
 CRGB leds[NUM_LEDS];
 CRGBPalette16 currentPalette;
@@ -81,15 +81,8 @@ void ledClass::tick() {
       break;
     case 9:
       fill_solid(currentPalette, 16, CRGB::Red);
-      // currentPalette[0] = CRGB::Red;
-      // currentPalette[1] = CRGB::Red;
-
       currentPalette[4] = CRGB::Blue;
       currentPalette[5] = CRGB::Blue;
-
-      // currentPalette[8] = CRGB::Red;
-      // currentPalette[9] = CRGB::Red;
-
       currentPalette[12] = CRGB::Blue;
       currentPalette[13] = CRGB::Blue;
       break;

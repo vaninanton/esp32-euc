@@ -1,6 +1,6 @@
 #include <InmotionV2Message.h>
 
-static const char* LOG_TAG = "EUC";
+static const char* LOG_TAG = "ESP32-EUC";
 
 InmotionV2Message::InmotionV2Message() {}
 
@@ -40,27 +40,9 @@ int InmotionV2Message::shortFromBytesLE(const uint8_t* pData, int starting) {
 }
 
 void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
-  // Serial.println("================================================== [NEW MESSAGE] ==================================================");
-
-  // Serial.print("🟢 ");
-  // for (size_t i = 0; i < length; i++)
-  //   Serial.printf("0x%02hX ", pData[i]);
-  // Serial.println();
-
   flag = pData[2];
   dataLength = pData[3];
   command = pData[4] & 0x7F;
-
-  // NoOp(0),
-  // Version=0x01,
-  // info=0x02,
-  // Diagnostic=0x03,
-  // live=0x04,
-  // bms=0x05,
-  // Something1=0x16,
-  // stats=0x17,
-  // Settings=0x32,
-  // control=0x96;
 
   switch (flag) {
     case (byte)0x00:
@@ -89,7 +71,6 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           break;
         case (byte)0x04: {
           // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x04 RealTimeInfo");
-
           EUC.busVoltage = shortFromBytesLE(pData, 0);
           EUC.busCurrent = signedShortFromBytesLE(pData, 2);
           EUC.speed = signedShortFromBytesLE(pData, 4);
@@ -125,7 +106,6 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           EUC.reserve53 = pData[5 + 53] & 0xff;
           EUC.reserve54 = pData[5 + 54] & 0xff;
           EUC.reserve55 = pData[5 + 55] & 0xff;
-
           EUC.HMICRunMode = (pData[5 + 56] & 0x07); // lock, drive, shutdown, idle
           EUC.MCRunMode = (pData[5 + 56] >> 3) & 0x07;
           EUC.motorState = (pData[5 + 56] >> 6) & 0x01;
