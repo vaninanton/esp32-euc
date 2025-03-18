@@ -6,7 +6,7 @@
 #include <esp_log.h>
 
 TimerMs timerShowEucDebugLog(1000, 1, false);
-Button btn(0);
+Button btn(9);
 
 static const char* LOG_TAG = "ESP32-EUC";
 
@@ -14,12 +14,23 @@ void setup() {
   ESP_LOGI(LOG_TAG, "Starting application...");
   EUC.setup();
   LED.setup();
+  pinMode(8, OUTPUT);
   ESP_LOGD(LOG_TAG, "Application started!");
 }
 
 void loop() {
   btn.tick();
   EUC.tick();
+
+  if (timerShowEucDebugLog.tick()) {
+    EUC.debug();
+  }
+
+  if (EUC.tailLightState == 3) {
+    digitalWrite(8, LOW);
+  } else {
+    digitalWrite(8, HIGH);
+  }
 
   if (btn.hold()) {
     LED.espSettings.modeChangedTime = millis();

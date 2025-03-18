@@ -124,15 +124,83 @@ void eucClass::connectToEuc() {
   EUC.eucClient->connect(EUC.advertisedDevice);
 }
 void eucClass::subscribeToEuc() {
-  if (!EUC.eucClient->isConnected())
-    return;
-  if (EUC.eucSubscribed)
+  if (!EUC.eucClient->isConnected() || EUC.eucSubscribed)
     return;
 
-  EUC.failedScanCount = 0;
+  EUC.failedScanCount =/**
+   * @file EUC.cpp
+   * @brief Файл, содержащий реализацию класса [eucClass](cci:2://file:///Users/vanton/PlatformIO/Projects/esp32-euc/include/EUC.h:15:0-94:1) и связанные с ним функции и классы.
+   */
+
+  #include "EUC.h"
+
+  // Статический экземпляр класса [eucClass](cci:2://file:///Users/vanton/PlatformIO/Projects/esp32-euc/include/EUC.h:15:0-94:1)
+  eucClass EUC;
+
+  /**
+   * @brief Инициализирует сервер BLE.
+   *
+   * Эта функция создает сервер BLE и устанавливает обработчики событий подключения и отключения клиентов.
+   */
+  void eucClass::createAppBleServer() {
+    if (EUC.appServer != nullptr)
+      return;
+
+    ESP_LOGD(LOG_TAG, "Creating BLE server...");
+    EUC.appServer = NimBLEDevice::createServer();
+    EUC.appServer->setCallbacks(new AppConnectCallbacks());
+
+    NimBLEService* appService = EUC.appServer->createService(uartServiceUUID);
+    NimBLEService* appFfe5 = EUC.appServer->createService(ffe5ServiceUUID);
+    NimBLEService* appFfe0 = EUC.appServer->createService(ffe0ServiceCharUUID);
+    NimBLECharacteristic* appTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+    NimBLECharacteristic* appRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
+    NimBLECharacteristic* appFfe9Characteristic = appFfe5->createCharacteristic(ffe9CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+    NimBLECharacteristic* appFfe4Characteristic = appFfe0->createCharacteristic(ffe4CharUUID, NIMBLE_PROPERTY::NOTIFY);
+    appService->start();
+
+    NimBLEAdvertising* appAdvertising = NimBLEDevice::getAdvertising();
+    appAdvertising->addServiceUUID(uartServiceUUID);
+    appTxCharacteristic->setCallbacks(new AppCallbacks());
+    appRxCharacteristic->setCallbacks(new AppCallbacks());
+    appFfe9Characteristic->setCallbacks(new AppCallbacks());
+    appFfe4Characteristic->setCallbacks(new AppCallbacks());
+    NimBLEDevice::startAdvertising();
+    NimBLEDevice::stopAdvertising();
+  }
+
+  /**
+   * @brief Создает клиент BLE для подключения к устройству EUC.
+   *
+   * Эта функция создает клиент BLE и устанавливает обработчик событий подключения и отключения.
+   */
+  void eucClass::createEucBleClient() {
+    if (EUC.eucClient != nullptr)
+      return;
+
+    ESP_LOGD(LOG_TAG, "Creating BLE client...");
+    EUC.eucClient = NimBLEDevice::createClient();
+    EUC.eucClient->setClientCallbacks(new EucConnectCallbacks(), true);
+  }
+
+  /**
+   * @brief Подключается к устройству EUC.
+   *
+   * Эта функция пытается подключиться к устройству EUC, используя найденное ранее устройство с именем "V11-9C07003B".
+   */
+  void eucClass::connectToEuc() {
+    if (EUC.eucClient == nullptr)
+      return;
+    if (EUC.eucClient->isConnected())
+      return;
+    if (EUC.advertisedDevice == nullptr)
+      return;
+
+    ESP_LOGD(LOG_TAG, "Connecting to EUC...");
+    // Сбрасываем статус подписки на RX
+    EUC.eucSub 0;
   ESP_LOGD(LOG_TAG, "Subscribing to EUC characteristics...");
   NimBLERemoteService* eucService = EUC.eucClient->getService(uartServiceUUID);
-  NimBLERemoteCharacteristic* eucTxCharacteristic = eucService->getCharacteristic(txCharUUID);
   NimBLERemoteCharacteristic* eucRxCharacteristic = eucService->getCharacteristic(rxCharUUID);
   eucRxCharacteristic->subscribe(true, eucNotifyReceived, false);
   ESP_LOGD(LOG_TAG, "Subscribed! Starting advertising...");
@@ -183,9 +251,9 @@ void eucClass::tick() {
 }
 
 void eucClass::debug() {
-  ESP_LOGD(LOG_TAG, "Power: %d.%.2dV, (%d.%.2d%%)", (int)(busVoltage / 100), (int)(busVoltage % 100), (int)(batteryPercentage / 100), (int)(batteryPercentage % 100));
+  // ESP_LOGD(LOG_TAG, "Power: %d.%.2dV, (%d.%.2d%%)", (int)(busVoltage / 100), (int)(busVoltage % 100), (int)(batteryPercentage / 100), (int)(batteryPercentage % 100));
   // ESP_LOGD(LOG_TAG, "busCurrent: %d", busCurrent);
-  ESP_LOGD(LOG_TAG, "speed: %d", speed);
+  // ESP_LOGD(LOG_TAG, "speed: %d", speed);
   // ESP_LOGD(LOG_TAG, "torque: %d", torque);
   // ESP_LOGD(LOG_TAG, "outputRate: %d", outputRate);
   // ESP_LOGD(LOG_TAG, "batteryOutputPower: %d", batteryOutputPower);
@@ -223,13 +291,13 @@ void eucClass::debug() {
   // ESP_LOGD(LOG_TAG, "motorState: %d", motorState);
   // ESP_LOGD(LOG_TAG, "chargeState: %d", chargeState);
   // ESP_LOGD(LOG_TAG, "backupBatteryState: %d", backupBatteryState);
-  ESP_LOGD(LOG_TAG, "lampState: %d", lampState);
-  ESP_LOGD(LOG_TAG, "decorativeLightState: %d", decorativeLightState);
-  ESP_LOGD(LOG_TAG, "liftedState: %d", liftedState);
+  // ESP_LOGD(LOG_TAG, "lampState: %d", lampState);
+  // ESP_LOGD(LOG_TAG, "decorativeLightState: %d", decorativeLightState);
+  // ESP_LOGD(LOG_TAG, "liftedState: %d", liftedState);
   ESP_LOGD(LOG_TAG, "tailLightState: %d", tailLightState);  // 3bits; 0 - CLOSED, 1 - LOWLIGHT, 2 - HIGHLIGHT, 3 - BLINKING
   // ESP_LOGD(LOG_TAG, "fanState: %d", fanState);
-  ESP_LOGD(LOG_TAG, "brakeState: %d", brakeState);
-  ESP_LOGD(LOG_TAG, "slowDownState: %d", slowDownState);
+  // ESP_LOGD(LOG_TAG, "brakeState: %d", brakeState);
+  // ESP_LOGD(LOG_TAG, "slowDownState: %d", slowDownState);
   // ESP_LOGD(LOG_TAG, "DFUState: %d", DFUState);
 }
 

@@ -1,6 +1,6 @@
 #include "LED.h"
 
-#define DATA_PIN 13
+#define DATA_PIN 4
 #define NUM_LEDS 17
 
 static const char* LOG_TAG = "ESP32-EUC";
@@ -8,9 +8,8 @@ static const char* LOG_TAG = "ESP32-EUC";
 CRGB leds[NUM_LEDS];
 CRGBPalette16 currentPalette;
 TBlendType currentBlending = LINEARBLEND;
-uint8_t brightness = 30;
+uint8_t brightness = 10;
 uint8_t startIndex = 0;
-uint8_t maxLeds = NUM_LEDS;
 TimerMs timerFastLed(10, 1, false);
 
 void ledClass::setup() {
@@ -41,7 +40,11 @@ void ledClass::tick() {
 
   switch (espSettings.paletteIndex) {
     case 1:
-      currentPalette = CloudColors_p;
+      fill_solid(currentPalette, 16, CRGB::Black);
+      currentPalette[0] = CRGB::White;
+      currentPalette[4] = CRGB::White;
+      currentPalette[8] = CRGB::White;
+      currentPalette[12] = CRGB::White;
       break;
     case 2:
       currentPalette = LavaColors_p;
@@ -53,11 +56,7 @@ void ledClass::tick() {
       currentPalette = ForestColors_p;
       break;
     case 5:
-      fill_solid(currentPalette, 16, CRGB::Black);
-      currentPalette[0] = CRGB::White;
-      currentPalette[4] = CRGB::White;
-      currentPalette[8] = CRGB::White;
-      currentPalette[12] = CRGB::White;
+      currentPalette = CloudColors_p;
       break;
     case 6:
       fill_solid(currentPalette, 16, CRGB::Black);
@@ -89,25 +88,24 @@ void ledClass::tick() {
   }
 
   startIndex = startIndex + 1;
+  // Заполнение по скорости
   if (espSettings.modeIndex == 1) {
-    if (EUC.lampState) {
-      brightness = 200;
-    } else if (EUC.decorativeLightState) {
-      brightness = 50;
-    } else {
-      brightness = 10;
-    }
-    // Заполнение по скорости, иначе просто играем палитрой
-    fill_solid(leds, NUM_LEDS, CRGB::Black);
-    if (EUC.speed == 0) {
-      FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
-    } else if (EUC.speed != 0) {
-      if (EUC.brakeState) {
-        fill_solid(leds, NUM_LEDS, CRGB::Red);
-      } else {
-        maxLeds = map(abs(EUC.speed), 0, 5000, 0, NUM_LEDS);
-        FillLEDsFromPaletteColors(startIndex, maxLeds);
-      }
+    // int16_t absSpeed = abs(EUC.speed);
+    // if (absSpeed != 0) {
+    //   long in_max = 3000;
+    //   if (absSpeed >= 3000) {
+    //     in_max = 4000;
+    //   } else if (absSpeed >= 4000) {
+    //     in_max = 5000;
+    //   } else if (absSpeed >= 5000) {
+    //     in_max = 5500;
+    //   }
+    //   long maxLeds = map(absSpeed, 0, 3000, 0, NUM_LEDS);
+    //   fill_gradient_RGB(leds, maxLeds, CRGB::Red, CRGB::White);
+    // }
+
+    if (EUC.tailLightState >= 2) {
+      fill_solid(leds, NUM_LEDS, CRGB::Red);
     }
   } else if (espSettings.modeIndex == 2) {
     // Всегда играем палитрой
@@ -120,12 +118,12 @@ void ledClass::tick() {
     fill_solid(leds, NUM_LEDS, CRGB::Black);
   }
 
-  if (espSettings.modeChangedTime != 0 && millis() - espSettings.modeChangedTime <= 3000) {
-    fill_solid(leds, espSettings.modeIndex, CRGB::Red);
+  if (espSettings.modeChangedTime != 0 && millis() - espSettings.modeChangedTime <= 1000) {
+    fill_solid(leds, espSettings.modeIndex, CRGB::Purple);
   }
 
-  if (espSettings.paletteChangedTime != 0 && millis() - espSettings.paletteChangedTime <= 3000) {
-    fill_solid(leds, espSettings.paletteIndex, CRGB::Green);
+  if (espSettings.paletteChangedTime != 0 && millis() - espSettings.paletteChangedTime <= 1000) {
+    fill_solid(leds, espSettings.paletteIndex, CRGB::Blue);
   }
 
   FastLED.show();
