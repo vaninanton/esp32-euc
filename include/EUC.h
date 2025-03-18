@@ -22,21 +22,21 @@ class eucClass {
   void createAppBleServer();
   void createEucBleClient();
   void startBleScan();
-  void onScanResult(NimBLEAdvertisedDevice* advertisedDevice);
+  void onScanResult(const NimBLEAdvertisedDevice* advertisedDevice);
   void onEucConnected(NimBLEClient* pClient);
-  void onEucDisconnected(NimBLEClient* pClient);
+  void onEucDisconnected(NimBLEClient* pClient, int reason);
   void connectToEuc();
   void subscribeToEuc();
   static void onEucNotifyReceived(NimBLERemoteCharacteristic* pChar, uint8_t* data, size_t dataLength, bool isNotify);
-  void onAppConnected(NimBLEServer* pServer, ble_gap_conn_desc* desc);
-  void onAppDisconnected(NimBLEServer* pServer);
-  void onAppSubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc);
-  void onAppUnsubscribe(NimBLECharacteristic* pChar, ble_gap_conn_desc* desc);
-  void onAppWrite(NimBLECharacteristic* pChar);
+  void onAppConnected(NimBLEServer* pServer, NimBLEConnInfo& connInfo);
+  void onAppDisconnected(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason);
+  void onAppSubscribe(NimBLECharacteristic* pChar, NimBLEConnInfo& connInfo, uint16_t subValue);
+  void onAppUnsubscribe(NimBLECharacteristic* pChar, NimBLEConnInfo& connInfo, uint16_t subValue);
+  void onAppWrite(NimBLECharacteristic* pChar, NimBLEConnInfo& connInfo);
 
   unsigned long failedScanCount = 0;
   unsigned long latestScan = 0;
-  NimBLEAdvertisedDevice* advertisedDevice = nullptr;
+  const NimBLEAdvertisedDevice* advertisedDevice = nullptr;
   NimBLEClient* eucClient = nullptr;
   NimBLEServer* appServer = nullptr;
 
