@@ -19,4 +19,3 @@ class InmotionV2Message {
   uint8_t command;
   size_t dataLength;
 };
-

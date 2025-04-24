@@ -25,4 +25,3 @@ class InmotionV2Unpacker {
   uint8_t flags = 0;
   UnpackerState state = UnpackerState::unknown;
 };
-

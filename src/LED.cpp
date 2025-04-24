@@ -1,38 +1,39 @@
 #include "LED.h"
 
-#define DATA_PIN 13
-#define NUM_LEDS 17
+// #define LED_DATA_PIN 13 // ESP32
+// #define LED_DATA_PIN 4 // ESP32C3 super mini
+// #define LEDS_COUNT 17
 
 static const char* LOG_TAG = "ESP32-EUC";
 
-CRGB leds[NUM_LEDS];
+CRGB leds[LEDS_COUNT];
 CRGBPalette16 currentPalette;
 TBlendType currentBlending = LINEARBLEND;
 uint8_t brightness = 30;
 uint8_t startIndex = 0;
-uint8_t maxLeds = NUM_LEDS;
+uint8_t maxLeds = LEDS_COUNT;
 TimerMs timerFastLed(10, 1, false);
 
 void ledClass::setup() {
-  FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
+  FastLED.addLeds<WS2812B, LED_DATA_PIN, GRB>(leds, LEDS_COUNT);
   FastLED.setCorrection(TypicalLEDStrip);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 100);
 
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  fill_solid(leds, LEDS_COUNT, CRGB::Black);
   leds[0] = CRGB::Red;
-  leds[NUM_LEDS - 1] = CRGB::Red;
+  leds[LEDS_COUNT - 1] = CRGB::Red;
   FastLED.show();
 }
 
 void ledClass::scanStart() {
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  fill_solid(leds, LEDS_COUNT, CRGB::Black);
   leds[0] = CRGB::Green;
-  leds[NUM_LEDS - 1] = CRGB::Green;
+  leds[LEDS_COUNT - 1] = CRGB::Green;
   FastLED.show();
 }
 
 void ledClass::scanStop() {
-  fadeToBlackBy(leds, NUM_LEDS, 20);
+  fadeToBlackBy(leds, LEDS_COUNT, 20);
 }
 
 void ledClass::tick() {
@@ -98,33 +99,35 @@ void ledClass::tick() {
       brightness = 10;
     }
     // Заполнение по скорости, иначе просто играем палитрой
-    fill_solid(leds, NUM_LEDS, CRGB::Black);
+    fill_solid(leds, LEDS_COUNT, CRGB::Black);
     if (EUC.speed == 0) {
-      FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
+      FillLEDsFromPaletteColors(startIndex, LEDS_COUNT);
     } else if (EUC.speed != 0) {
       if (EUC.brakeState) {
-        fill_solid(leds, NUM_LEDS, CRGB::Red);
+        fill_solid(leds, LEDS_COUNT, CRGB::Red);
       } else {
-        maxLeds = map(abs(EUC.speed), 0, 5000, 0, NUM_LEDS);
+        maxLeds = map(abs(EUC.speed), 0, 5000, 0, LEDS_COUNT);
         FillLEDsFromPaletteColors(startIndex, maxLeds);
       }
     }
   } else if (espSettings.modeIndex == 2) {
     // Всегда играем палитрой
-    FillLEDsFromPaletteColors(startIndex, NUM_LEDS);
+    FillLEDsFromPaletteColors(startIndex, LEDS_COUNT);
   } else if (espSettings.modeIndex == 3) {
     // Ёлочная игрушка
     juggle();
   } else if (espSettings.modeIndex == 4) {
-    fadeToBlackBy(leds, NUM_LEDS, 20);
-    fill_solid(leds, NUM_LEDS, CRGB::Black);
+    fadeToBlackBy(leds, LEDS_COUNT, 20);
+    fill_solid(leds, LEDS_COUNT, CRGB::Black);
   }
 
-  if (espSettings.modeChangedTime != 0 && millis() - espSettings.modeChangedTime <= 3000) {
+  if (espSettings.modeChangedTime != 0 &&
+      millis() - espSettings.modeChangedTime <= 3000) {
     fill_solid(leds, espSettings.modeIndex, CRGB::Red);
   }
 
-  if (espSettings.paletteChangedTime != 0 && millis() - espSettings.paletteChangedTime <= 3000) {
+  if (espSettings.paletteChangedTime != 0 &&
+      millis() - espSettings.paletteChangedTime <= 3000) {
     fill_solid(leds, espSettings.paletteIndex, CRGB::Green);
   }
 
@@ -133,17 +136,18 @@ void ledClass::tick() {
 
 void ledClass::juggle() {
   // eight colored dots, weaving in and out of sync with each other
-  fadeToBlackBy(leds, NUM_LEDS, 20);
+  fadeToBlackBy(leds, LEDS_COUNT, 20);
   uint8_t dothue = 0;
   for (int i = 0; i < 8; i++) {
-    leds[beatsin16(i + 7, 0, NUM_LEDS - 1)] |= CHSV(dothue, 200, brightness);
+    leds[beatsin16(i + 7, 0, LEDS_COUNT - 1)] |= CHSV(dothue, 200, brightness);
     dothue += 32;
   }
 }
 
 void ledClass::FillLEDsFromPaletteColors(uint8_t colorIndex, uint8_t maxLed) {
   for (int i = 0; i < maxLed; i++) {
-    leds[i] = ColorFromPalette(currentPalette, colorIndex, brightness, currentBlending);
+    leds[i] = ColorFromPalette(currentPalette, colorIndex, brightness,
+                               currentBlending);
     colorIndex += 3;
   }
 }

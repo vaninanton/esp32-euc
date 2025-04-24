@@ -19,26 +19,68 @@ class eucClass {
   void debug();
 
   void tick();
+
+  /// @brief Создание BLE сервера для подключения к приложению
   void createAppBleServer();
+
+  /// @brief Создание BLE клиента для подключения к EUC
   void createEucBleClient();
+
+  /// @brief Запуск сканирования BLE устройств
   void startBleScan();
+
+  /// @brief Обработка результата сканирования
   void onScanResult(const NimBLEAdvertisedDevice* advertisedDevice);
+
+  /// @brief Обработка подключения к EUC
   void onEucConnected(NimBLEClient* pClient);
+
+  /// @brief Обработка отключения от EUC
   void onEucDisconnected(NimBLEClient* pClient, int reason);
+
+  /// @brief Подключение к EUC
   void connectToEuc();
-  void subscribeToEuc();
-  static void onEucNotifyReceived(NimBLERemoteCharacteristic* pChar, uint8_t* data, size_t dataLength, bool isNotify);
+
+  void advertiseApp();
+
+  /// @brief Подписка на характеристики EUC
+  void subscribeToEucCharacteristics();
+
+  /// @brief Обработка характеристик EUC
+  static void onEucNotifyReceived(NimBLERemoteCharacteristic* pChar,
+                                  uint8_t* data,
+                                  size_t dataLength,
+                                  bool isNotify);
+
+  /// @brief Обработка подключения к приложению
   void onAppConnected(NimBLEServer* pServer, NimBLEConnInfo& connInfo);
-  void onAppDisconnected(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason);
-  void onAppSubscribe(NimBLECharacteristic* pChar, NimBLEConnInfo& connInfo, uint16_t subValue);
-  void onAppUnsubscribe(NimBLECharacteristic* pChar, NimBLEConnInfo& connInfo, uint16_t subValue);
-  void onAppWrite(NimBLECharacteristic* pChar, NimBLEConnInfo& connInfo);
+
+  /// @brief Обработка отключения от приложения
+  void onAppDisconnected(NimBLEServer* pServer,
+                         NimBLEConnInfo& connInfo,
+                         int reason);
+
+  /// @brief Обработка события подписки приложения к устройству
+  void onAppSubscribe(NimBLECharacteristic* pChar,
+                      NimBLEConnInfo& connInfo,
+                      uint16_t subValue);
+
+  /// @brief Обработка события отписки приложения от устройства
+  void onAppUnsubscribe(NimBLECharacteristic* pChar,
+                        NimBLEConnInfo& connInfo,
+                        uint16_t subValue);
+
+  /// @brief Проксирование приложения к EUC
+  void sendCharacteristicToEuc(NimBLECharacteristic* pChar,
+                               NimBLEConnInfo& connInfo);
 
   unsigned long failedScanCount = 0;
   unsigned long latestScan = 0;
+
+  /// @brief Найденное, но ещё не подключённое устройство
   const NimBLEAdvertisedDevice* advertisedDevice = nullptr;
-  NimBLEClient* eucClient = nullptr;
-  NimBLEServer* appServer = nullptr;
+  NimBLEClient* eucBleClient = nullptr;
+  NimBLEServer* appBleServer = nullptr;
 
   bool eucSubscribed = false;
   bool appSubscribed = false;

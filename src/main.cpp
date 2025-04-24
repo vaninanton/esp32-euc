@@ -11,6 +11,7 @@ Button btn(0);
 static const char* LOG_TAG = "ESP32-EUC";
 
 void setup() {
+  delay(3000);
   ESP_LOGI(LOG_TAG, "Starting application...");
   EUC.setup();
   LED.setup();
