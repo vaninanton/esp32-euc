@@ -179,9 +179,9 @@ void eucClass::tick() {
 }
 
 void eucClass::debug() {
-  ESP_LOGD(LOG_TAG, "Power: %d.%.2dV, (%d.%.2d%%)", (int)(busVoltage / 100), (int)(busVoltage % 100), (int)(batteryPercentage / 100), (int)(batteryPercentage % 100));
+  // ESP_LOGD(LOG_TAG, "Power: %d.%.2dV, (%d.%.2d%%)", (int)(busVoltage / 100), (int)(busVoltage % 100), (int)(batteryPercentage / 100), (int)(batteryPercentage % 100));
   // ESP_LOGD(LOG_TAG, "busCurrent: %d", busCurrent);
-  ESP_LOGD(LOG_TAG, "speed: %d", speed);
+  // ESP_LOGD(LOG_TAG, "speed: %d", speed);
   // ESP_LOGD(LOG_TAG, "torque: %d", torque);
   // ESP_LOGD(LOG_TAG, "outputRate: %d", outputRate);
   // ESP_LOGD(LOG_TAG, "batteryOutputPower: %d", batteryOutputPower);

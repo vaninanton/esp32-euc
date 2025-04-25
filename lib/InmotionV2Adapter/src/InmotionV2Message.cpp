@@ -4,9 +4,42 @@ static const char* LOG_TAG = "EUC";
 
 InmotionV2Message::InmotionV2Message() {}
 
-void InmotionV2Message::printHex(const uint8_t* buffer, size_t length) {
-  for (size_t i = 0; i < length; i++)
-    Serial.printf("%02h ", buffer[i]);
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_RESET   "\x1b[0m"
+static uint8_t prevData[256];
+static bool isFirst = true;
+
+void byteToBinary(uint8_t byte, char* str) {
+  for (int i = 7; i >= 0; i--) {
+      *str++ = (byte & (1 << i)) ? '1' : '0';
+  }
+  *str = '\0'; // null-terminator
+}
+
+void InmotionV2Message::printHex(const uint8_t* pData, size_t length) {
+  char buffer[1024] = {0};
+  char* ptr = buffer;
+  for (size_t i = (5 + 56); i < (5 + 58) && (ptr - buffer) < sizeof(buffer) - 16; i++) {
+      char binStr[9]; // 8 бит + \0
+      byteToBinary(pData[i], binStr);
+      if (isFirst || pData[i] != prevData[i]) {
+          // ptr += sprintf(ptr, ANSI_COLOR_RED "%02X " ANSI_COLOR_RESET, pData[i]);
+          ptr += sprintf(ptr, ANSI_COLOR_RED "%02X(%s) " ANSI_COLOR_RESET, pData[i], binStr);
+      } else {
+          // ptr += sprintf(ptr, "%02X ", pData[i]);
+          ptr += sprintf(ptr, "%02X(%s) ", pData[i], binStr);
+      }
+  }
+
+  isFirst = false;
+  memcpy(prevData, pData, length);
+
+  log_printf(
+      "[%s] "
+      "%s"
+      "\r\n",
+      "M",
+      buffer);
 }
 
 uint8_t InmotionV2Message::checksum(const uint8_t* pData, size_t length) {
@@ -89,6 +122,7 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           break;
         case (byte)0x04: {
           // ESP_LOGD(LOG_TAG, "[DEBUG] Packet command: 0x04 RealTimeInfo");
+          printHex(pData, length);
 
           EUC.busVoltage = shortFromBytesLE(pData, 0);
           EUC.busCurrent = signedShortFromBytesLE(pData, 2);
@@ -130,15 +164,24 @@ void InmotionV2Message::parse(const uint8_t* pData, size_t length) {
           EUC.MCRunMode = (pData[5 + 56] >> 3) & 0x07;
           EUC.motorState = (pData[5 + 56] >> 6) & 0x01;
           EUC.chargeState = (pData[5 + 56] >> 7) & 0x01;
-          EUC.backupBatteryState = (pData[5 + 57]) & 0x01;
-          EUC.lampState = (pData[5 + 57] >> 1) & 0x01;
-          EUC.decorativeLightState = (pData[5 + 57] >> 2) & 0x01;
-          EUC.liftedState = (pData[5 + 57] >> 3) & 0x03;
-          EUC.tailLightState = (pData[5 + 57] >> 4) & 0x07; // 3bits; 0 - CLOSED, 1 - LOWLIGHT, 2 - HIGHLIGHT, 3 - BLINKING
+          // EUC.backupBatteryState = (pData[5 + 57]) & 0x01; // unknown
+          EUC.lampState = (pData[5 + 57]) & 0x01;
+          EUC.decorativeLightState = (pData[5 + 57] >> 1) & 0x01;
+          EUC.liftedState = (pData[5 + 57] >> 2) & 0x01;
+          EUC.tailLightState = (pData[5 + 57] >> 3) & 0x03; // 3bits; 0 - CLOSED, 1 - LOWLIGHT, 2 - HIGHLIGHT, 3 - BLINKING
           EUC.fanState = (pData[5 + 57] >> 7) & 0x01;
           EUC.brakeState = (pData[5 + 58]) & 0x01;
           EUC.slowDownState = (pData[5 + 58] >> 2) & 0x01;
           EUC.DFUState = (pData[5 + 58] >> 3) & 0x01;
+
+          // ESP_LOGD("EUC", "lampState: %d", EUC.lampState);
+          // ESP_LOGD("EUC", "decorativeLightState: %d", EUC.decorativeLightState);
+          // ESP_LOGD("EUC", "liftedState: %d", EUC.liftedState);
+          // ESP_LOGD("EUC", "tailLightState: %d", EUC.tailLightState);  // 3bits; 0 - CLOSED, 1 - LOWLIGHT, 2 - HIGHLIGHT, 3 - BLINKING
+          // ESP_LOGD("EUC", "fanState: %d", EUC.fanState);
+          // ESP_LOGD("EUC", "brakeState: %d", EUC.brakeState);
+          // ESP_LOGD("EUC", "slowDownState: %d", EUC.slowDownState);
+
           break;
         }
         case (byte)0x05:
