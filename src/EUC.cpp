@@ -57,7 +57,7 @@ class AppServerCallbacks : public NimBLEServerCallbacks {
    * information. about the peer connection parameters.
    */
   void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
-    ESP_LOGD(LOG_TAG, "App connected to proxy");
+    ESP_LOGD(LOG_TAG, "App connected to ESP32");
   }
 
   /**
@@ -72,7 +72,7 @@ class AppServerCallbacks : public NimBLEServerCallbacks {
   void onDisconnect(NimBLEServer* pServer,
                     NimBLEConnInfo& connInfo,
                     int reason) override {
-    ESP_LOGD(LOG_TAG, "App disconnected from proxy");
+    ESP_LOGD(LOG_TAG, "App disconnected from ESP32");
   }
 
   /**
@@ -96,7 +96,7 @@ class AppCallbacks : public NimBLECharacteristicCallbacks {
    */
   void onWrite(NimBLECharacteristic* pCharacteristic,
                NimBLEConnInfo& connInfo) override {
-    ESP_LOGD(LOG_TAG, "Notify received from app");
+    // ESP_LOGD(LOG_TAG, "Notify received from app");
     if (EUC.eucBleClient != nullptr &&
         EUC.eucBleClient->isConnected() == true) {
       bool writeValueResult =
@@ -146,7 +146,6 @@ static void eucNotifyReceived(
     uint8_t* pData,
     size_t length,
     bool isNotify) {
-  ESP_LOGD(LOG_TAG, "Notify received from EUC");
   for (size_t i = 0; i < length; i++) {
     if (unpacker->addChar(pData[i]) == true) {
       uint8_t* buffer = unpacker->getBuffer();
@@ -155,8 +154,6 @@ static void eucNotifyReceived(
     }
   }
 
-  // EUC.appBleServer->getServiceByUUID(pBLERemoteCharacteristic->getRemoteService()->getUUID())->getCharacteristic(pBLERemoteCharacteristic->getUUID())->notify(pData,
-  // length, true);
   bool notifyResult =
       EUC.appBleServer->getServiceByUUID(uartServiceUUID)
           ->getCharacteristic(pBLERemoteCharacteristic->getUUID())
@@ -171,6 +168,7 @@ static void eucNotifyReceived(
 /////////////////////////////////////////////////////
 
 void eucClass::setup() {
+  ESP_LOGD(LOG_TAG, "Initializing NimBLE");
   bool initializeResult = NimBLEDevice::init("V11-ESP32EUC");
   if (initializeResult == false) {
     ESP_LOGE(LOG_TAG, "Failed to initialize NimBLE");
@@ -183,71 +181,78 @@ void eucClass::createAppBleServer() {
   if (EUC.appBleServer != nullptr)
     return;
 
-  ESP_LOGD(LOG_TAG, "Creating BLE server for app...");
+  ESP_LOGD(LOG_TAG, "Creating BLE server...");
   EUC.appBleServer = NimBLEDevice::createServer();
   EUC.appBleServer->setCallbacks(&appServerCallbacks, true);
 
   NimBLEService* appService = EUC.appBleServer->createService(uartServiceUUID);
   NimBLEService* appFfe5 = EUC.appBleServer->createService(ffe5ServiceUUID);
   NimBLEService* appFfe0 = EUC.appBleServer->createService(ffe0ServiceCharUUID);
-  NimBLECharacteristic* appTxCharacteristic = appService->createCharacteristic(
-      txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  NimBLECharacteristic* appRxCharacteristic =
-      appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
-  NimBLECharacteristic* appFfe9Characteristic = appFfe5->createCharacteristic(
-      ffe9CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
-  NimBLECharacteristic* appFfe4Characteristic =
-      appFfe0->createCharacteristic(ffe4CharUUID, NIMBLE_PROPERTY::NOTIFY);
+  NimBLECharacteristic* appTxCharacteristic = appService->createCharacteristic(txCharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  NimBLECharacteristic* appRxCharacteristic = appService->createCharacteristic(rxCharUUID, NIMBLE_PROPERTY::NOTIFY);
+  NimBLECharacteristic* appFfe9Characteristic = appFfe5->createCharacteristic(ffe9CharUUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  NimBLECharacteristic* appFfe4Characteristic = appFfe0->createCharacteristic(ffe4CharUUID, NIMBLE_PROPERTY::NOTIFY);
 
-  ESP_LOGD(LOG_TAG, "Starting BLE server for app...");
-  bool appServiceStartedResult = appService->start();
+  //////////////////////////
+
+  ESP_LOGD(LOG_TAG, "Setting callbacks for RX/TX/FFE9/FFE4 characteristics");
   appTxCharacteristic->setCallbacks(&appChrCallbacks);
   appRxCharacteristic->setCallbacks(&appChrCallbacks);
   appFfe9Characteristic->setCallbacks(&appChrCallbacks);
   appFfe4Characteristic->setCallbacks(&appChrCallbacks);
 
-  if (appServiceStartedResult == false) {
-    ESP_LOGE(LOG_TAG, "BLE server for app failed to start, trying to recreate");
-    return;
-  }
+  //////////////////////////
 
-  ESP_LOGD(LOG_TAG, "BLE server for app started successfully");
-
-  // bool serviceFfe5Started = appFfe5->start();
-  // if (serviceFfe5Started == false) {
-  //   ESP_LOGE(LOG_TAG, "Failed to start service");
-  //   return;
-  // }
-  // ESP_LOGD(LOG_TAG, "appFfe5 service started");
-
-  // bool serviceFfe0Started = appFfe0->start();
-  // if (serviceFfe0Started == false) {
-  //   ESP_LOGE(LOG_TAG, "Failed to start service");
-  //   return;
-  // }
-  // ESP_LOGD(LOG_TAG, "appFfe0 service started");
-
-  ESP_LOGD(LOG_TAG, "Creating advertising for app server...");
-
+  ESP_LOGD(LOG_TAG, "Setting name to advertising...");
+  NimBLEDevice::setPower(4);
+  NimBLEDevice::getAdvertising()->refreshAdvertisingData();
   bool setNameResult = NimBLEDevice::getAdvertising()->setName("V11-ESP32EUC");
   if (setNameResult == false) {
     ESP_LOGE(LOG_TAG, "Failed to set name to advertising");
     return;
   }
-  ESP_LOGD(LOG_TAG, "Name setted to advertising successfully");
+  ESP_LOGD(LOG_TAG, "[OK]");
 
-  bool addServiceUUIDResult =
-      NimBLEDevice::getAdvertising()->addServiceUUID(uartServiceUUID);
+  ESP_LOGD(LOG_TAG, "Starting UART service...");
+  bool appServiceStartedResult = appService->start();
+  if (appServiceStartedResult == false) {
+    ESP_LOGE(LOG_TAG, "UART service failed to start");
+    return;
+  }
+  ESP_LOGD(LOG_TAG, "[OK]");
+
+  ESP_LOGD(LOG_TAG, "Starting FFE5 service...");
+  bool serviceFfe5Started = appFfe5->start();
+  if (serviceFfe5Started == false) {
+    ESP_LOGE(LOG_TAG, "Failed to start service");
+    return;
+  }
+  ESP_LOGD(LOG_TAG, "[OK]");
+
+  ESP_LOGD(LOG_TAG, "Starting FFE0 service...");
+  bool serviceFfe0Started = appFfe0->start();
+  if (serviceFfe0Started == false) {
+    ESP_LOGE(LOG_TAG, "Failed to start service");
+    return;
+  }
+  ESP_LOGD(LOG_TAG, "[OK]");
+
+  //////////////////////////
+
+  ESP_LOGD(LOG_TAG, "Adding UART service to advertising...");
+  bool addServiceUUIDResult = NimBLEDevice::getAdvertising()->addServiceUUID(uartServiceUUID);
   if (addServiceUUIDResult == false) {
     ESP_LOGE(LOG_TAG, "Failed to add service to advertising");
     return;
   }
-  ESP_LOGD(LOG_TAG, "Service added to advertising");
+  ESP_LOGD(LOG_TAG, "[OK]");
 
+  ESP_LOGD(LOG_TAG, "Starting advertising...");
   bool startAdvertisingResult = NimBLEDevice::startAdvertising();
   if (startAdvertisingResult == false) {
     ESP_LOGE(LOG_TAG, "Failed to start tmp advertising");
   }
+  ESP_LOGD(LOG_TAG, "[OK]");
 
   // bool advertisingStopped = NimBLEDevice::stopAdvertising();
   // if (advertisingStopped == false) {
@@ -272,10 +277,12 @@ void eucClass::startBleScan() {
   // if (EUC.latestScan > 0 && millis() - EUC.latestScan < 10000)
   //   return;
 
-  //   ESP_LOGD(LOG_TAG, "Scanning for BLE devices...");
-
   NimBLEScan* pScan = NimBLEDevice::getScan();
+  if (pScan->isScanning() == true) {
+    return;
+  }
   pScan->setScanCallbacks(&scanCallbacks, false);
+  ESP_LOGD(LOG_TAG, "Scanning for BLE devices...");
   bool startResult = pScan->start(3000);
   if (startResult == false) {
     ESP_LOGE(LOG_TAG, "Failed to start scan");
@@ -288,8 +295,10 @@ void eucClass::onScanResult(const NimBLEAdvertisedDevice* advertisedDevice) {
   if (advertisedDevice->getName() != "V11-9C07003B")
     return;
 
-  ESP_LOGI(LOG_TAG, "[SCAN] Found known BLE device: %s",
-           advertisedDevice->getName().c_str());
+  ESP_LOGI(LOG_TAG, "[SCAN] Found known BLE device: %s, %s",
+           advertisedDevice->getName().c_str(),
+           advertisedDevice->getAddress().toString().c_str()
+          );
 
   EUC.advertisedDevice = advertisedDevice;
   // EUC.failedScanCount = 0;
@@ -330,7 +339,6 @@ void eucClass::subscribeToEucCharacteristics() {
     return;
 
   ESP_LOGI(LOG_TAG, "Subscribing to EUC characteristics...");
-  delay(3000);
 
   NimBLERemoteService* eucService =
       EUC.eucBleClient->getService(uartServiceUUID);
@@ -342,8 +350,7 @@ void eucClass::subscribeToEucCharacteristics() {
       eucService->getCharacteristic(txCharUUID);
   NimBLERemoteCharacteristic* eucRxCharacteristic =
       eucService->getCharacteristic(rxCharUUID);
-  bool subscribeResult =
-      eucRxCharacteristic->subscribe(true, eucNotifyReceived, false) == false;
+  bool subscribeResult = eucRxCharacteristic->subscribe(true, eucNotifyReceived, false);
   if (subscribeResult == false) {
     ESP_LOGE(LOG_TAG, "Failed to subscribe to EUC RX characteristic");
     // TODO
